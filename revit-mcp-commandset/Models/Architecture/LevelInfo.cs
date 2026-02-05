@@ -80,4 +80,16 @@ public class LevelInfo
     /// </summary>
     [JsonProperty("viewElevationOffset")]
     public double ViewElevationOffset { get; set; }
+
+    /// <summary>
+    ///     Whether to create a floor plan view for this level (default: true)
+    /// </summary>
+    [JsonProperty("createFloorPlan")]
+    public bool CreateFloorPlan { get; set; } = true;
+
+    /// <summary>
+    ///     Whether to create a ceiling plan view for this level (default: true)
+    /// </summary>
+    [JsonProperty("createCeilingPlan")]
+    public bool CreateCeilingPlan { get; set; } = true;
 }

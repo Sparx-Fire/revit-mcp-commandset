@@ -83,6 +83,36 @@ public class RoomCreationInfo
     public int PhaseId { get; set; }
 
     /// <summary>
+    ///     Upper limit level ID
+    /// </summary>
+    [JsonProperty("upperLimitId")]
+    public int UpperLimitId { get; set; }
+
+    /// <summary>
+    ///     Offset from upper limit (mm)
+    /// </summary>
+    [JsonProperty("limitOffset")]
+    public double LimitOffset { get; set; }
+
+    /// <summary>
+    ///     Offset from base level (mm)
+    /// </summary>
+    [JsonProperty("baseOffset")]
+    public double BaseOffset { get; set; }
+
+    /// <summary>
+    ///     Department the room belongs to
+    /// </summary>
+    [JsonProperty("department")]
+    public string Department { get; set; }
+
+    /// <summary>
+    ///     Comments for the room
+    /// </summary>
+    [JsonProperty("comments")]
+    public string Comments { get; set; }
+
+    /// <summary>
     ///     Additional options
     /// </summary>
     [JsonProperty("options")]

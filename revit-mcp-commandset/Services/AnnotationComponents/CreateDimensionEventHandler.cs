@@ -187,7 +187,7 @@ public class CreateDimensionEventHandler : IExternalEventHandler, IWaitableExter
                             // Apply additional parameters
                             ApplyDimensionParameters(dimension, dimInfo);
 
-                            createdDimensionIds.Add(dimension.Id.IntegerValue);
+                            createdDimensionIds.Add((int)dimension.Id.Value);
                         }
 
                         transaction.Commit();

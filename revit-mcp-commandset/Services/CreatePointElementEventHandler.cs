@@ -116,22 +116,102 @@ namespace RevitMCPCommandSet.Services
                         if (!symbol.IsActive)
                             symbol.Activate();
 
-                        // 调用FamilyInstance通用创建方法
-                        var instance = doc.CreateInstance(symbol, JZPoint.ToXYZ(data.LocationPoint), null, baseLevel, topLevel, baseOffset, topOffset);
+                        // Resolve explicit host wall if provided
+                        Element explicitHost = null;
+                        if (data.HostWallId > 0)
+                        {
+                            ElementId hostId = new ElementId(data.HostWallId);
+                            Element hostElem = doc.GetElement(hostId);
+                            if (hostElem is Wall)
+                            {
+                                explicitHost = hostElem;
+                            }
+                            else
+                            {
+                                _warnings.Add($"Requested hostWallId {data.HostWallId} is not a valid wall. Using auto-detection.");
+                            }
+                        }
+
+                        var instance = doc.CreateInstance(
+                            symbol,
+                            JZPoint.ToXYZ(data.LocationPoint),
+                            null,           // locationLine
+                            baseLevel,
+                            topLevel,
+                            baseOffset,
+                            topOffset,
+                            null,           // faceDirection
+                            null,           // handDirection
+                            null,           // view
+                            explicitHost,   // explicit host wall
+                            true);          // snap to host center
+
                         if (instance != null)
                         {
-                            if (builtInCategory == BuiltInCategory.OST_Doors)
+                            // Handle orientation for doors and windows
+                            if (builtInCategory == BuiltInCategory.OST_Doors ||
+                                builtInCategory == BuiltInCategory.OST_Windows)
                             {
-                                // 翻转门确保正常剪切
-                                instance.flipFacing();
                                 doc.Regenerate();
-                                instance.flipFacing();
-                                doc.Regenerate();
+
+                                bool shouldFlip = data.FacingFlipped;
+
+                                // Auto-detect facing based on which side of the wall
+                                // the original (pre-snap) placement point was on
+                                if (!shouldFlip)
+                                {
+                                    Wall hostWall = instance.Host as Wall;
+                                    if (hostWall != null)
+                                    {
+                                        LocationCurve locCurve = hostWall.Location as LocationCurve;
+                                        if (locCurve != null)
+                                        {
+                                            XYZ originalPt = JZPoint.ToXYZ(data.LocationPoint);
+                                            XYZ wallStart = locCurve.Curve.GetEndPoint(0);
+                                            XYZ wallEnd = locCurve.Curve.GetEndPoint(1);
+                                            XYZ wallDir = new XYZ(wallEnd.X - wallStart.X, wallEnd.Y - wallStart.Y, 0).Normalize();
+                                            XYZ wallNormal = wallDir.CrossProduct(XYZ.BasisZ).Normalize();
+
+                                            IntersectionResult ir = locCurve.Curve.Project(originalPt);
+                                            if (ir != null)
+                                            {
+                                                XYZ centerPt = ir.XYZPoint;
+                                                double side = (originalPt - centerPt).DotProduct(wallNormal);
+
+                                                // If the point is on the negative-normal side but
+                                                // instance faces positive-normal (or vice versa), flip
+                                                double facingDot = instance.FacingOrientation.DotProduct(wallNormal);
+                                                if ((side < -1e-10 && facingDot > 0) ||
+                                                    (side > 1e-10 && facingDot < 0))
+                                                {
+                                                    shouldFlip = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (shouldFlip)
+                                {
+                                    instance.flipFacing();
+                                    doc.Regenerate();
+                                }
+                            }
+
+                            // Handle rotation for non-hosted elements (furniture, generic models)
+                            if (data.Rotation != 0 &&
+                                builtInCategory != BuiltInCategory.OST_Doors &&
+                                builtInCategory != BuiltInCategory.OST_Windows)
+                            {
+                                XYZ origin = JZPoint.ToXYZ(data.LocationPoint);
+                                Line rotationAxis = Line.CreateBound(origin, origin + XYZ.BasisZ);
+                                double angleRadians = data.Rotation * Math.PI / 180.0;
+                                ElementTransformUtils.RotateElement(doc, instance.Id, rotationAxis, angleRadians);
                             }
 
                             elementIds.Add((int)instance.Id.Value);
                         }
-                        //doc.Refresh();
+
                         transaction.Commit();
                     }
                 }

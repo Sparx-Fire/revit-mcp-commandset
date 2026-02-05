@@ -24,6 +24,7 @@ namespace RevitMCPCommandSet.Services
         /// 执行结果（传出数据）
         /// </summary>
         public AIResult<List<int>> Result { get; private set; }
+        private List<string> _warnings = new List<string>();
 
         /// <summary>
         /// 设置创建的参数
@@ -40,8 +41,11 @@ namespace RevitMCPCommandSet.Services
             try
             {
                 var elementIds = new List<int>();
+                _warnings.Clear();
                 foreach (var data in CreatedInfo)
                 {
+                    int requestedTypeId = data.TypeId;
+
                     // Step0 获取构件类型
                     BuiltInCategory builtInCategory = BuiltInCategory.INVALID;
                     Enum.TryParse(data.Category.Replace(".", ""), true, out builtInCategory);
@@ -91,6 +95,15 @@ namespace RevitMCPCommandSet.Services
                             .Cast<FamilySymbol>()
                             .FirstOrDefault();
                         }
+                        if (symbol == null)
+                        {
+                            _warnings.Add($"No family types available for category {builtInCategory}.");
+                            continue;
+                        }
+                        if (requestedTypeId != -1 && requestedTypeId != 0)
+                        {
+                            _warnings.Add($"Requested typeId {requestedTypeId} not found. Defaulted to '{symbol.FamilyName}: {symbol.Name}' (ID: {symbol.Id.Value})");
+                        }
                     }
                     if (symbol == null)
                         continue;
@@ -122,10 +135,15 @@ namespace RevitMCPCommandSet.Services
                         transaction.Commit();
                     }
                 }
+                string message = $"Successfully created {elementIds.Count} element(s).";
+                if (_warnings.Count > 0)
+                {
+                    message += "\n\n⚠ Warnings:\n  • " + string.Join("\n  • ", _warnings);
+                }
                 Result = new AIResult<List<int>>
                 {
                     Success = true,
-                    Message = $"成功创建{elementIds.Count}个族实例，其ElementId储存在Response属性中",
+                    Message = message,
                     Response = elementIds,
                 };
             }

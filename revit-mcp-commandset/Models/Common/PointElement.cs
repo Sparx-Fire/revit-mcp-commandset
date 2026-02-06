@@ -61,6 +61,24 @@ public class PointElement
     public double BaseOffset { get; set; }
 
     /// <summary>
+    ///     旋转角度（度），用于非宿主构件（如家具）
+    /// </summary>
+    [JsonProperty("rotation")]
+    public double Rotation { get; set; } = 0;
+
+    /// <summary>
+    ///     显式宿主墙体ElementId，-1表示自动检测
+    /// </summary>
+    [JsonProperty("hostWallId")]
+    public int HostWallId { get; set; } = -1;
+
+    /// <summary>
+    ///     是否翻转门窗朝向
+    /// </summary>
+    [JsonProperty("facingFlipped")]
+    public bool FacingFlipped { get; set; } = false;
+
+    /// <summary>
     ///     参数化属性
     /// </summary>
     [JsonProperty("parameters")]

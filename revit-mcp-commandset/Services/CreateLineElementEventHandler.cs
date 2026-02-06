@@ -24,6 +24,7 @@ namespace RevitMCPCommandSet.Services
         /// 执行结果（传出数据）
         /// </summary>
         public AIResult<List<int>> Result { get; private set; }
+        private List<string> _warnings = new List<string>();
 
         public string _wallName = "常规 - ";
         public string _ductName = "矩形风管 - ";
@@ -43,8 +44,11 @@ namespace RevitMCPCommandSet.Services
             try
             {
                 var elementIds = new List<int>();
+                _warnings.Clear();
                 foreach (var data in CreatedInfo)
                 {
+                    int requestedTypeId = data.TypeId;
+
                     // Step0 获取构件类型
                     BuiltInCategory builtInCategory = BuiltInCategory.INVALID;
                     Enum.TryParse(data.Category.Replace(".", ""), true, out builtInCategory);
@@ -97,27 +101,39 @@ namespace RevitMCPCommandSet.Services
                         case BuiltInCategory.OST_Walls:
                             if (wallType == null)
                             {
-                                using (Transaction transaction = new Transaction(doc, "创建墙类型"))
-                                {
-                                    transaction.Start();
-                                    wallType = CreateOrGetWallType(doc, data.Thickness / 304.8);
-                                    transaction.Commit();
-                                }
+                                // Requested typeId was invalid or not provided, fall back to first available
+                                wallType = new FilteredElementCollector(doc)
+                                    .OfClass(typeof(WallType))
+                                    .Cast<WallType>()
+                                    .FirstOrDefault();
                                 if (wallType == null)
+                                {
+                                    _warnings.Add($"No wall types available in project.");
                                     continue;
+                                }
+                                if (requestedTypeId != -1 && requestedTypeId != 0)
+                                {
+                                    _warnings.Add($"Requested wall typeId {requestedTypeId} not found. Defaulted to '{wallType.Name}' (ID: {wallType.Id.Value})");
+                                }
                             }
                             break;
                         case BuiltInCategory.OST_DuctCurves:
                             if (ductType == null)
                             {
-                                using (Transaction transaction = new Transaction(doc, "创建风管类型"))
-                                {
-                                    transaction.Start();
-                                    ductType = CreateOrGetDuctType(doc, data.Thickness / 304.8, data.Height / 304.8);
-                                    transaction.Commit();
-                                }
+                                // Requested typeId was invalid or not provided, fall back to first available rectangular duct
+                                ductType = new FilteredElementCollector(doc)
+                                    .OfClass(typeof(DuctType))
+                                    .Cast<DuctType>()
+                                    .FirstOrDefault(d => d.Shape == ConnectorProfileType.Rectangular);
                                 if (ductType == null)
+                                {
+                                    _warnings.Add($"No rectangular duct types available in project.");
                                     continue;
+                                }
+                                if (requestedTypeId != -1 && requestedTypeId != 0)
+                                {
+                                    _warnings.Add($"Requested duct typeId {requestedTypeId} not found. Defaulted to '{ductType.Name}' (ID: {ductType.Id.Value})");
+                                }
                             }
                             break;
                         default:
@@ -136,9 +152,16 @@ namespace RevitMCPCommandSet.Services
                                     .Cast<FamilySymbol>()
                                     .FirstOrDefault();
                                 }
+                                if (symbol == null)
+                                {
+                                    _warnings.Add($"No family types available for category {builtInCategory}.");
+                                    continue;
+                                }
+                                if (requestedTypeId != -1 && requestedTypeId != 0)
+                                {
+                                    _warnings.Add($"Requested typeId {requestedTypeId} not found. Defaulted to '{symbol.FamilyName}: {symbol.Name}' (ID: {symbol.Id.Value})");
+                                }
                             }
-                            if (symbol == null)
-                                continue;
                             break;
                     }
 
@@ -211,10 +234,15 @@ namespace RevitMCPCommandSet.Services
                         transaction.Commit();
                     }
                 }
+                string message = $"Successfully created {elementIds.Count} element(s).";
+                if (_warnings.Count > 0)
+                {
+                    message += "\n\n⚠ Warnings:\n  • " + string.Join("\n  • ", _warnings);
+                }
                 Result = new AIResult<List<int>>
                 {
                     Success = true,
-                    Message = $"成功创建{elementIds.Count}个族实例，其ElementId储存在Response属性中",
+                    Message = message,
                     Response = elementIds,
                 };
             }

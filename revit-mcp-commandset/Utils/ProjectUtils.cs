@@ -35,7 +35,9 @@ namespace RevitMCPCommandSet.Utils
             double topOffset = -1,
             XYZ faceDirection = null,
             XYZ handDirection = null,
-            View view = null)
+            View view = null,
+            Element explicitHost = null,
+            bool snapToHostCenter = true)
         {
             // 基本参数检查
             if (doc == null)
@@ -79,29 +81,59 @@ namespace RevitMCPCommandSet.Utils
                 case FamilyPlacementType.OneLevelBasedHosted:
                     if (locationPoint == null)
                         throw new ArgumentNullException($"必要参数{typeof(XYZ)} {nameof(locationPoint)}缺失！");
-                    // 自动查找最近的宿主元素
-                    Element host = doc.GetNearestHostElement(locationPoint, familySymbol);
+
+                    Element host = explicitHost;
+                    XYZ placementPoint = locationPoint;
+
+                    // If explicit host provided and it's a wall, snap to its centerline
+                    if (host != null && snapToHostCenter && host is Wall explicitWall)
+                    {
+                        LocationCurve eLoc = explicitWall.Location as LocationCurve;
+                        if (eLoc != null)
+                        {
+                            IntersectionResult eIr = eLoc.Curve.Project(locationPoint);
+                            if (eIr != null)
+                                placementPoint = new XYZ(eIr.XYZPoint.X, eIr.XYZPoint.Y, locationPoint.Z);
+                        }
+                    }
+
+                    // Auto-detect host wall if not explicitly provided
+                    if (host == null)
+                    {
+                        // Try geometric wall-centerline proximity first
+                        var wallResult = doc.GetNearestWallByLocationLine(locationPoint, baseLevel);
+                        if (wallResult.HasValue)
+                        {
+                            host = wallResult.Value.wall;
+                            if (snapToHostCenter)
+                                placementPoint = wallResult.Value.projectedPoint;
+                        }
+                        else
+                        {
+                            // Fall back to original ray-casting method
+                            host = doc.GetNearestHostElement(locationPoint, familySymbol);
+                        }
+                    }
+
                     if (host == null)
                         throw new ArgumentNullException($"找不到合规的的宿主信息！");
-                    // 布置方向由主体的创建方向决定
-                    // 带标高信息
+
                     if (baseLevel != null)
                     {
                         instance = doc.Create.NewFamilyInstance(
-                            locationPoint,                  // 实例将被放置在指定标高上的物理位置
-                            familySymbol,                   // 表示要插入的实例类型的 FamilySymbol 对象
-                            host,                           // 实例将嵌入其中的主体对象
-                            baseLevel,                      // 用作对象基准标高的 Level 对象
-                            StructuralType.NonStructural);  // 如果是结构构件，则指定构件的类型
+                            placementPoint,
+                            familySymbol,
+                            host,
+                            baseLevel,
+                            StructuralType.NonStructural);
                     }
-                    // 不带标高信息
                     else
                     {
                         instance = doc.Create.NewFamilyInstance(
-                            locationPoint,                  // 实例将被放置在指定标高上的物理位置
-                            familySymbol,                   // 表示要插入的实例类型的 FamilySymbol 对象
-                            host,                           // 实例将嵌入其中的主体对象
-                            StructuralType.NonStructural);  // 如果是结构构件，则指定构件的类型
+                            placementPoint,
+                            familySymbol,
+                            host,
+                            StructuralType.NonStructural);
                     }
                     break;
 
@@ -565,6 +597,77 @@ namespace RevitMCPCommandSet.Utils
                 TaskDialog.Show("错误", $"获取最近宿主元素时发生错误：{ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Finds the nearest wall to a point using wall location-line distance calculation.
+        /// More reliable than ray-casting for door/window placement.
+        /// </summary>
+        /// <param name="doc">Current Revit document</param>
+        /// <param name="point">Target point (internal units, feet)</param>
+        /// <param name="level">Level to filter walls on</param>
+        /// <param name="tolerance">Extra tolerance beyond half wall width (feet). Default ~5mm.</param>
+        /// <returns>Tuple of (wall, projectedPoint, wallDirection, distance) or null</returns>
+        public static (Wall wall, XYZ projectedPoint, XYZ wallDirection, double distance)?
+            GetNearestWallByLocationLine(
+                this Document doc,
+                XYZ point,
+                Level level,
+                double tolerance = 5.0 / 304.8)
+        {
+            if (doc == null || point == null || level == null)
+                return null;
+
+            // Collect all walls on the given level
+            var walls = new FilteredElementCollector(doc)
+                .OfClass(typeof(Wall))
+                .Cast<Wall>()
+                .Where(w =>
+                {
+                    Parameter baseLevelParam = w.get_Parameter(BuiltInParameter.WALL_BASE_CONSTRAINT);
+                    return baseLevelParam != null && baseLevelParam.AsElementId() == level.Id;
+                })
+                .ToList();
+
+            Wall bestWall = null;
+            XYZ bestProjection = null;
+            XYZ bestDirection = null;
+            double bestDistance = double.MaxValue;
+
+            foreach (Wall wall in walls)
+            {
+                LocationCurve locCurve = wall.Location as LocationCurve;
+                if (locCurve == null) continue;
+
+                Curve curve = locCurve.Curve;
+                if (curve == null) continue;
+
+                // Use Curve.Project() which handles both lines and arcs
+                IntersectionResult ir = curve.Project(new XYZ(point.X, point.Y, curve.GetEndPoint(0).Z));
+                if (ir == null) continue;
+
+                XYZ projectedPt = ir.XYZPoint;
+                double distance = new XYZ(point.X - projectedPt.X, point.Y - projectedPt.Y, 0).GetLength();
+
+                // Check if point is within half the wall width + tolerance
+                double halfWidth = wall.Width / 2.0;
+                if (distance <= halfWidth + tolerance && distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestWall = wall;
+                    bestProjection = new XYZ(projectedPt.X, projectedPt.Y, point.Z);
+
+                    // Compute wall direction from curve tangent at projected parameter
+                    XYZ p0 = curve.GetEndPoint(0);
+                    XYZ p1 = curve.GetEndPoint(1);
+                    bestDirection = new XYZ(p1.X - p0.X, p1.Y - p0.Y, 0).Normalize();
+                }
+            }
+
+            if (bestWall == null)
+                return null;
+
+            return (bestWall, bestProjection, bestDirection, bestDistance);
         }
 
         /// <summary>

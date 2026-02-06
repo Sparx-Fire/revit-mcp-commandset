@@ -3,6 +3,7 @@ using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
 using RevitMCPCommandSet.Models.Common;
 using RevitMCPCommandSet.Models.Structure;
+using RevitMCPCommandSet.Utils;
 using RevitMCPSDK.API.Interfaces;
 
 namespace RevitMCPCommandSet.Services
@@ -86,8 +87,24 @@ namespace RevitMCPCommandSet.Services
                 {
                     trans.Start();
 
-                    // 1. Resolve Level
-                    Level level = ResolveLevel(doc, Parameters.LevelName, warnings);
+                    // 1. Resolve Level - Find nearest existing level to the target elevation (like walls do)
+                    Level level = doc.FindNearestLevel(Parameters.Elevation / 304.8);
+                    if (level == null)
+                    {
+                        // Fallback: try to find any level
+                        level = new FilteredElementCollector(doc)
+                            .OfClass(typeof(Level))
+                            .Cast<Level>()
+                            .FirstOrDefault();
+                    }
+                    if (level == null)
+                    {
+                        throw new Exception("No levels found in project. Please create at least one level before creating beam systems.");
+                    }
+
+                    // Add info about which level was selected
+                    double levelElevationMm = level.Elevation * 304.8;
+                    warnings.Add($"Using level '{level.Name}' at elevation {levelElevationMm:F0}mm (nearest to target elevation {Parameters.Elevation:F0}mm)");
 
                     // 2. Build rectangular profile (4 curves in closed loop)
                     List<Curve> profileCurves = BuildRectangularProfile(
@@ -121,13 +138,39 @@ namespace RevitMCPCommandSet.Services
                     );
                     beamSystem.LayoutRule = layoutRule;
 
-                    // 8. Set elevation if non-zero
-                    if (Parameters.Elevation != 0)
+                    // 7b. Force regeneration so BeamSystem creates its member beams
+                    doc.Regenerate();
+
+                    // 8. Apply elevation offset to all beams using Z_OFFSET_VALUE parameter
+                    // Note: BeamSystem.Create() places beams at level elevation. We use Z_OFFSET_VALUE to offset them.
+                    double elevationOffsetFt = (Parameters.Elevation / 304.8) - level.Elevation;
+
+                    if (Math.Abs(elevationOffsetFt) > 0.001) // Only apply if there's a meaningful offset
                     {
-                        Parameter elevParam = beamSystem.get_Parameter(BuiltInParameter.STRUCTURAL_ELEVATION_AT_BOTTOM);
-                        if (elevParam != null && !elevParam.IsReadOnly)
+                        ICollection<ElementId> beamIdsForElevation = beamSystem.GetBeamIds();
+                        int elevationSetCount = 0;
+
+                        foreach (ElementId beamId in beamIdsForElevation)
                         {
-                            elevParam.Set(Parameters.Elevation / 304.8);
+                            FamilyInstance beam = doc.GetElement(beamId) as FamilyInstance;
+                            if (beam != null)
+                            {
+                                Parameter zOffset = beam.get_Parameter(BuiltInParameter.Z_OFFSET_VALUE);
+                                if (zOffset != null && !zOffset.IsReadOnly)
+                                {
+                                    zOffset.Set(elevationOffsetFt);
+                                    elevationSetCount++;
+                                }
+                            }
+                        }
+
+                        if (elevationSetCount > 0)
+                        {
+                            warnings.Add($"Applied elevation offset of {Parameters.Elevation:F0}mm to {elevationSetCount} beams");
+                        }
+                        else if (beamIdsForElevation.Count > 0)
+                        {
+                            warnings.Add("Could not apply elevation offset - Z_OFFSET_VALUE parameter not available");
                         }
                     }
 

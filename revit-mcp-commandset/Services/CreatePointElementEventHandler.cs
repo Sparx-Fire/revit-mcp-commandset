@@ -24,6 +24,7 @@ namespace RevitMCPCommandSet.Services
         /// 执行结果（传出数据）
         /// </summary>
         public AIResult<List<int>> Result { get; private set; }
+        private List<string> _warnings = new List<string>();
 
         /// <summary>
         /// 设置创建的参数
@@ -40,8 +41,11 @@ namespace RevitMCPCommandSet.Services
             try
             {
                 var elementIds = new List<int>();
+                _warnings.Clear();
                 foreach (var data in CreatedInfo)
                 {
+                    int requestedTypeId = data.TypeId;
+
                     // Step0 获取构件类型
                     BuiltInCategory builtInCategory = BuiltInCategory.INVALID;
                     Enum.TryParse(data.Category.Replace(".", ""), true, out builtInCategory);
@@ -91,6 +95,15 @@ namespace RevitMCPCommandSet.Services
                             .Cast<FamilySymbol>()
                             .FirstOrDefault();
                         }
+                        if (symbol == null)
+                        {
+                            _warnings.Add($"No family types available for category {builtInCategory}.");
+                            continue;
+                        }
+                        if (requestedTypeId != -1 && requestedTypeId != 0)
+                        {
+                            _warnings.Add($"Requested typeId {requestedTypeId} not found. Defaulted to '{symbol.FamilyName}: {symbol.Name}' (ID: {symbol.Id.Value})");
+                        }
                     }
                     if (symbol == null)
                         continue;
@@ -103,29 +116,114 @@ namespace RevitMCPCommandSet.Services
                         if (!symbol.IsActive)
                             symbol.Activate();
 
-                        // 调用FamilyInstance通用创建方法
-                        var instance = doc.CreateInstance(symbol, JZPoint.ToXYZ(data.LocationPoint), null, baseLevel, topLevel, baseOffset, topOffset);
+                        // Resolve explicit host wall if provided
+                        Element explicitHost = null;
+                        if (data.HostWallId > 0)
+                        {
+                            ElementId hostId = new ElementId(data.HostWallId);
+                            Element hostElem = doc.GetElement(hostId);
+                            if (hostElem is Wall)
+                            {
+                                explicitHost = hostElem;
+                            }
+                            else
+                            {
+                                _warnings.Add($"Requested hostWallId {data.HostWallId} is not a valid wall. Using auto-detection.");
+                            }
+                        }
+
+                        var instance = doc.CreateInstance(
+                            symbol,
+                            JZPoint.ToXYZ(data.LocationPoint),
+                            null,           // locationLine
+                            baseLevel,
+                            topLevel,
+                            baseOffset,
+                            topOffset,
+                            null,           // faceDirection
+                            null,           // handDirection
+                            null,           // view
+                            explicitHost,   // explicit host wall
+                            true);          // snap to host center
+
                         if (instance != null)
                         {
-                            if (builtInCategory == BuiltInCategory.OST_Doors)
+                            // Handle orientation for doors and windows
+                            if (builtInCategory == BuiltInCategory.OST_Doors ||
+                                builtInCategory == BuiltInCategory.OST_Windows)
                             {
-                                // 翻转门确保正常剪切
-                                instance.flipFacing();
                                 doc.Regenerate();
-                                instance.flipFacing();
-                                doc.Regenerate();
+
+                                bool shouldFlip = data.FacingFlipped;
+
+                                // Auto-detect facing based on which side of the wall
+                                // the original (pre-snap) placement point was on
+                                if (!shouldFlip)
+                                {
+                                    Wall hostWall = instance.Host as Wall;
+                                    if (hostWall != null)
+                                    {
+                                        LocationCurve locCurve = hostWall.Location as LocationCurve;
+                                        if (locCurve != null)
+                                        {
+                                            XYZ originalPt = JZPoint.ToXYZ(data.LocationPoint);
+                                            XYZ wallStart = locCurve.Curve.GetEndPoint(0);
+                                            XYZ wallEnd = locCurve.Curve.GetEndPoint(1);
+                                            XYZ wallDir = new XYZ(wallEnd.X - wallStart.X, wallEnd.Y - wallStart.Y, 0).Normalize();
+                                            XYZ wallNormal = wallDir.CrossProduct(XYZ.BasisZ).Normalize();
+
+                                            IntersectionResult ir = locCurve.Curve.Project(originalPt);
+                                            if (ir != null)
+                                            {
+                                                XYZ centerPt = ir.XYZPoint;
+                                                double side = (originalPt - centerPt).DotProduct(wallNormal);
+
+                                                // If the point is on the negative-normal side but
+                                                // instance faces positive-normal (or vice versa), flip
+                                                double facingDot = instance.FacingOrientation.DotProduct(wallNormal);
+                                                if ((side < -1e-10 && facingDot > 0) ||
+                                                    (side > 1e-10 && facingDot < 0))
+                                                {
+                                                    shouldFlip = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (shouldFlip)
+                                {
+                                    instance.flipFacing();
+                                    doc.Regenerate();
+                                }
+                            }
+
+                            // Handle rotation for non-hosted elements (furniture, generic models)
+                            if (data.Rotation != 0 &&
+                                builtInCategory != BuiltInCategory.OST_Doors &&
+                                builtInCategory != BuiltInCategory.OST_Windows)
+                            {
+                                XYZ origin = JZPoint.ToXYZ(data.LocationPoint);
+                                Line rotationAxis = Line.CreateBound(origin, origin + XYZ.BasisZ);
+                                double angleRadians = data.Rotation * Math.PI / 180.0;
+                                ElementTransformUtils.RotateElement(doc, instance.Id, rotationAxis, angleRadians);
                             }
 
                             elementIds.Add((int)instance.Id.Value);
                         }
-                        //doc.Refresh();
+
                         transaction.Commit();
                     }
+                }
+                string message = $"Successfully created {elementIds.Count} element(s).";
+                if (_warnings.Count > 0)
+                {
+                    message += "\n\n⚠ Warnings:\n  • " + string.Join("\n  • ", _warnings);
                 }
                 Result = new AIResult<List<int>>
                 {
                     Success = true,
-                    Message = $"成功创建{elementIds.Count}个族实例，其ElementId储存在Response属性中",
+                    Message = message,
                     Response = elementIds,
                 };
             }

@@ -112,6 +112,11 @@
       "commandName": "create_level",
       "description": "Create levels at specified elevations with automatic floor plan view generation",
       "assemblyPath": "RevitMCPCommandSet.dll"
+    },
+    {
+      "commandName": "send_code_to_revit",
+      "description": "Execute dynamic C# code in Revit with access to the Document and Revit API",
+      "assemblyPath": "RevitMCPCommandSet.dll"
     }
   ]
 }

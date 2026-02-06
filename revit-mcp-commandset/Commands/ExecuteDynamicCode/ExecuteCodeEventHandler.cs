@@ -1,6 +1,8 @@
-using System.CodeDom.Compiler;
+using System.IO;
+using System.Reflection;
 using Autodesk.Revit.UI;
-using Microsoft.CSharp;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Newtonsoft.Json;
 using RevitMCPSDK.API.Interfaces;
 
@@ -76,23 +78,10 @@ namespace RevitMCPCommandSet.Commands.ExecuteDynamicCode
 
         private object CompileAndExecuteCode(string code, Document doc, object[] parameters)
         {
-            // 添加必要的程序集引用
-            var compilerParams = new CompilerParameters
-            {
-                GenerateInMemory = true,
-                GenerateExecutable = false,
-                ReferencedAssemblies =
-                {
-                    "System.dll",
-                    "System.Core.dll",
-                    typeof(Document).Assembly.Location,  // RevitAPI.dll
-                    typeof(UIApplication).Assembly.Location // RevitAPIUI.dll
-                }
-            };
-
             // 包装代码以规范入口点
             var wrappedCode = $@"
 using System;
+using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using System.Collections.Generic;
@@ -109,25 +98,39 @@ namespace AIGeneratedCode
     }}
 }}";
 
+            var syntaxTree = CSharpSyntaxTree.ParseText(wrappedCode);
+
+            // 添加必要的程序集引用（引用所有已加载的程序集）
+            var references = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location))
+                .Cast<MetadataReference>()
+                .ToList();
+
             // 编译代码
-            using (var provider = new CSharpCodeProvider())
+            var compilation = CSharpCompilation.Create(
+                "AIGeneratedCode",
+                syntaxTrees: new[] { syntaxTree },
+                references: references,
+                options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+            );
+
+            using (var ms = new MemoryStream())
             {
-                var compileResults = provider.CompileAssemblyFromSource(
-                    compilerParams,
-                    wrappedCode
-                );
+                var result = compilation.Emit(ms);
 
                 // 处理编译结果
-                if (compileResults.Errors.HasErrors)
+                if (!result.Success)
                 {
-                    var errors = string.Join("\n", compileResults.Errors
-                        .Cast<CompilerError>()
-                        .Select(e => $"Line {e.Line}: {e.ErrorText}"));
+                    var errors = string.Join("\n", result.Diagnostics
+                        .Where(d => d.Severity == DiagnosticSeverity.Error)
+                        .Select(d => $"Line {d.Location.GetLineSpan().StartLinePosition.Line}: {d.GetMessage()}"));
                     throw new Exception($"代码编译错误:\n{errors}");
                 }
 
                 // 反射调用执行方法
-                var assembly = compileResults.CompiledAssembly;
+                ms.Seek(0, SeekOrigin.Begin);
+                var assembly = Assembly.Load(ms.ToArray());
                 var executorType = assembly.GetType("AIGeneratedCode.CodeExecutor");
                 var executeMethod = executorType.GetMethod("Execute");
 

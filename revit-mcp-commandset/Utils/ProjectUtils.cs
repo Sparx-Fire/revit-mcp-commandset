@@ -135,6 +135,16 @@ namespace RevitMCPCommandSet.Utils
                             host,
                             StructuralType.NonStructural);
                     }
+
+                    // Set sill height for windows (baseOffset maps to sill height for hosted elements)
+                    if (instance != null && baseOffset != -1)
+                    {
+                        Parameter sillParam = instance.get_Parameter(BuiltInParameter.INSTANCE_SILL_HEIGHT_PARAM);
+                        if (sillParam != null && !sillParam.IsReadOnly)
+                        {
+                            sillParam.Set(baseOffset);
+                        }
+                    }
                     break;
 
                 // 基于两个标高的族（如：柱子）

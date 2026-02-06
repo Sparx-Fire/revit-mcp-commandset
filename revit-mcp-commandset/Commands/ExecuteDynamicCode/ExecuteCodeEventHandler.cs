@@ -1,4 +1,4 @@
-﻿using System.CodeDom.Compiler;
+using System.CodeDom.Compiler;
 using Autodesk.Revit.UI;
 using Microsoft.CSharp;
 using Newtonsoft.Json;
@@ -34,6 +34,7 @@ namespace RevitMCPCommandSet.Commands.ExecuteDynamicCode
         // 等待执行完成 - IWaitableExternalEventHandler接口实现
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
+            _resetEvent.Reset();
             return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 

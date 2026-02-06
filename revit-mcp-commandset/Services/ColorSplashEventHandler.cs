@@ -1,4 +1,4 @@
-﻿using Autodesk.Revit.UI;
+using Autodesk.Revit.UI;
 using Newtonsoft.Json.Linq;
 using RevitMCPSDK.API.Interfaces;
 
@@ -236,7 +236,8 @@ namespace RevitMCPCommandSet.Services
         /// <returns>Whether operation completed within timeout</returns>
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            return _resetEvent.WaitOne(timeoutMilliseconds);
+            _resetEvent.Reset();
+        return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
         /// <summary>

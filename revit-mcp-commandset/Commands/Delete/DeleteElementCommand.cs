@@ -7,6 +7,7 @@ namespace RevitMCPCommandSet.Commands.Delete
 {
     public class DeleteElementCommand : ExternalEventCommandBase
     {
+        private static readonly object _executionLock = new object();
         private DeleteElementEventHandler _handler => (DeleteElementEventHandler)Handler;
 
         public override string CommandName => "delete_element";
@@ -18,38 +19,41 @@ namespace RevitMCPCommandSet.Commands.Delete
 
         public override object Execute(JObject parameters, string requestId)
         {
-            try
+            lock (_executionLock)
             {
-                // 解析数组参数
-                var elementIds = parameters?["elementIds"]?.ToObject<string[]>();
-                if (elementIds == null || elementIds.Length == 0)
+                try
                 {
-                    throw new ArgumentException("元素ID列表不能为空");
-                }
-
-                // 设置要删除的元素ID数组
-                _handler.ElementIds = elementIds;
-
-                // 触发外部事件并等待完成
-                if (RaiseAndWaitForCompletion(15000))
-                {
-                    if (_handler.IsSuccess)
+                    // 解析数组参数
+                    var elementIds = parameters?["elementIds"]?.ToObject<string[]>();
+                    if (elementIds == null || elementIds.Length == 0)
                     {
-                        return new { deleted = true, count = _handler.DeletedCount };
+                        throw new ArgumentException("元素ID列表不能为空");
+                    }
+
+                    // 设置要删除的元素ID数组
+                    _handler.ElementIds = elementIds;
+
+                    // 触发外部事件并等待完成
+                    if (RaiseAndWaitForCompletion(15000))
+                    {
+                        if (_handler.IsSuccess)
+                        {
+                            return new { deleted = true, count = _handler.DeletedCount };
+                        }
+                        else
+                        {
+                            throw new Exception("删除元素失败");
+                        }
                     }
                     else
                     {
-                        throw new Exception("删除元素失败");
+                        throw new TimeoutException("删除元素操作超时");
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    throw new TimeoutException("删除元素操作超时");
+                    throw new Exception($"删除元素失败: {ex.Message}");
                 }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"删除元素失败: {ex.Message}");
             }
         }
     }

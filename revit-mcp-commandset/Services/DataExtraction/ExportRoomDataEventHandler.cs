@@ -25,7 +25,8 @@ namespace RevitMCPCommandSet.Services.DataExtraction
 
         public bool WaitForCompletion(int timeoutMilliseconds = 10000)
         {
-            return _resetEvent.WaitOne(timeoutMilliseconds);
+            _resetEvent.Reset();
+        return _resetEvent.WaitOne(timeoutMilliseconds);
         }
 
         public void Execute(UIApplication app)

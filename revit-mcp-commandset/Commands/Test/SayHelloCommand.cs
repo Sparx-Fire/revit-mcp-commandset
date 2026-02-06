@@ -7,6 +7,7 @@ namespace RevitMCPCommandSet.Commands.Test
 {
     public class SayHelloCommand : ExternalEventCommandBase
     {
+        private static readonly object _executionLock = new object();
         private SayHelloEventHandler _handler => (SayHelloEventHandler)Handler;
 
         public override string CommandName => "say_hello";
@@ -18,29 +19,32 @@ namespace RevitMCPCommandSet.Commands.Test
 
         public override object Execute(JObject parameters, string requestId)
         {
-            try
+            lock (_executionLock)
             {
-                // Parse optional message parameter
-                string message = "Hello MCP!";
-                if (parameters?["message"] != null)
+                try
                 {
-                    message = parameters["message"].ToString();
-                }
+                    // Parse optional message parameter
+                    string message = "Hello MCP!";
+                    if (parameters?["message"] != null)
+                    {
+                        message = parameters["message"].ToString();
+                    }
 
-                _handler.Message = message;
+                    _handler.Message = message;
 
-                if (RaiseAndWaitForCompletion(15000))
-                {
-                    return new { success = true, message = message };
+                    if (RaiseAndWaitForCompletion(15000))
+                    {
+                        return new { success = true, message = message };
+                    }
+                    else
+                    {
+                        throw new TimeoutException("Say hello operation timed out");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    throw new TimeoutException("Say hello operation timed out");
+                    throw new Exception($"Say hello failed: {ex.Message}");
                 }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Say hello failed: {ex.Message}");
             }
         }
     }

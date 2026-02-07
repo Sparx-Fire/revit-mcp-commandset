@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build Revit 2020 (.NET Framework 4.8)
+        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R20" -restore:false
+
+      - name: Build Revit 2021 (.NET Framework 4.8)
+        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R21" -restore:false
+
+      - name: Build Revit 2022 (.NET Framework 4.8)
+        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R22" -restore:false
+
+      - name: Build Revit 2023 (.NET Framework 4.8)
+        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R23" -restore:false
+
+      - name: Build Revit 2024 (.NET Framework 4.8)
+        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R24" -restore:false
+
+      - name: Build Revit 2025 (.NET 8)
+        run: dotnet build revit-mcp-commandset/RevitMCPCommandSet.csproj -c "Release R25"
+
+      - name: Build Revit 2026 (.NET 8)
+        run: dotnet build revit-mcp-commandset/RevitMCPCommandSet.csproj -c "Release R26"
+
+      - name: Create release assets
+        run: |
+          $version = "${{ github.ref_name }}"
+          $outputDir = "release-assets"
+          New-Item -ItemType Directory -Force -Path $outputDir
+
+          $revitVersions = @(
+            @{ Config = "Release R20"; Year = "2020" },
+            @{ Config = "Release R21"; Year = "2021" },
+            @{ Config = "Release R22"; Year = "2022" },
+            @{ Config = "Release R23"; Year = "2023" },
+            @{ Config = "Release R24"; Year = "2024" },
+            @{ Config = "Release R25"; Year = "2025" },
+            @{ Config = "Release R26"; Year = "2026" }
+          )
+
+          foreach ($rv in $revitVersions) {
+            $binDir = "revit-mcp-commandset/bin/$($rv.Config)"
+            if (Test-Path $binDir) {
+              # Create versioned directory structure
+              $tempDir = "temp-$($rv.Year)"
+              New-Item -ItemType Directory -Force -Path "$tempDir/RevitMCPCommandSet/$($rv.Year)"
+
+              # Copy DLLs and PDBs
+              Get-ChildItem -Path $binDir -Recurse -Include *.dll, *.pdb | ForEach-Object {
+                Copy-Item $_.FullName -Destination "$tempDir/RevitMCPCommandSet/$($rv.Year)/" -Force
+              }
+
+              # Copy command.json to root of RevitMCPCommandSet folder
+              Copy-Item "command.json" -Destination "$tempDir/RevitMCPCommandSet/" -Force
+
+              $zipName = "$outputDir/RevitMCPCommandSet-$version-Revit$($rv.Year).zip"
+              Compress-Archive -Path "$tempDir/*" -DestinationPath $zipName
+              Write-Host "Created $zipName"
+
+              Remove-Item -Recurse -Force $tempDir
+            } else {
+              Write-Host "Warning: $binDir not found"
+            }
+          }
+        shell: pwsh
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

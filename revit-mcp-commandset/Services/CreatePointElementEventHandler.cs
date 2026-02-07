@@ -74,7 +74,7 @@ namespace RevitMCPCommandSet.Services
                             {
                                 symbol = typeEle as FamilySymbol;
                                 // 获取symbol的Category对象并转换为BuiltInCategory枚举
-                                builtInCategory = (BuiltInCategory)(int)symbol.Category.Id.Value;
+                                builtInCategory = (BuiltInCategory)symbol.Category.Id.GetIntValue();
                             }
                         }
                     }
@@ -102,7 +102,7 @@ namespace RevitMCPCommandSet.Services
                         }
                         if (requestedTypeId != -1 && requestedTypeId != 0)
                         {
-                            _warnings.Add($"Requested typeId {requestedTypeId} not found. Defaulted to '{symbol.FamilyName}: {symbol.Name}' (ID: {symbol.Id.Value})");
+                            _warnings.Add($"Requested typeId {requestedTypeId} not found. Defaulted to '{symbol.FamilyName}: {symbol.Name}' (ID: {symbol.Id.GetValue()})");
                         }
                     }
                     if (symbol == null)
@@ -209,7 +209,7 @@ namespace RevitMCPCommandSet.Services
                                 ElementTransformUtils.RotateElement(doc, instance.Id, rotationAxis, angleRadians);
                             }
 
-                            elementIds.Add((int)instance.Id.Value);
+                            elementIds.Add(instance.Id.GetIntValue());
                         }
 
                         transaction.Commit();

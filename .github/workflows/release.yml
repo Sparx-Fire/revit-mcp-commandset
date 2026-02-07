@@ -24,23 +24,20 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Restore dependencies
-        run: dotnet restore
-
       - name: Build Revit 2020 (.NET Framework 4.8)
-        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R20" -restore:false
+        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R20" -restore
 
       - name: Build Revit 2021 (.NET Framework 4.8)
-        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R21" -restore:false
+        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R21" -restore
 
       - name: Build Revit 2022 (.NET Framework 4.8)
-        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R22" -restore:false
+        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R22" -restore
 
       - name: Build Revit 2023 (.NET Framework 4.8)
-        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R23" -restore:false
+        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R23" -restore
 
       - name: Build Revit 2024 (.NET Framework 4.8)
-        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R24" -restore:false
+        run: msbuild revit-mcp-commandset/RevitMCPCommandSet.csproj -p:Configuration="Release R24" -restore
 
       - name: Build Revit 2025 (.NET 8)
         run: dotnet build revit-mcp-commandset/RevitMCPCommandSet.csproj -c "Release R25"

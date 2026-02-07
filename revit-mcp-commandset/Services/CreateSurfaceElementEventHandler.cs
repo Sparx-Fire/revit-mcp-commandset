@@ -77,22 +77,22 @@ namespace RevitMCPCommandSet.Services
                             {
                                 symbol = typeEle as FamilySymbol;
                                 // 获取symbol的Category对象并转换为BuiltInCategory枚举
-                                builtInCategory = (BuiltInCategory)(int)symbol.Category.Id.Value;
+                                builtInCategory = (BuiltInCategory)symbol.Category.Id.GetIntValue();
                             }
                             else if (typeEle != null && typeEle is FloorType)
                             {
                                 floorType = typeEle as FloorType;
-                                builtInCategory = (BuiltInCategory)(int)floorType.Category.Id.Value;
+                                builtInCategory = (BuiltInCategory)floorType.Category.Id.GetIntValue();
                             }
                             else if (typeEle != null && typeEle is RoofType)
                             {
                                 roofType = typeEle as RoofType;
-                                builtInCategory = (BuiltInCategory)(int)roofType.Category.Id.Value;
+                                builtInCategory = (BuiltInCategory)roofType.Category.Id.GetIntValue();
                             }
                             else if (typeEle != null && typeEle is CeilingType)
                             {
                                 ceilingType = typeEle as CeilingType;
-                                builtInCategory = (BuiltInCategory)(int)ceilingType.Category.Id.Value;
+                                builtInCategory = (BuiltInCategory)ceilingType.Category.Id.GetIntValue();
                             }
                         }
                     }
@@ -116,7 +116,7 @@ namespace RevitMCPCommandSet.Services
                                 }
                                 if (requestedTypeId != -1 && requestedTypeId != 0)
                                 {
-                                    _warnings.Add($"Requested floor typeId {requestedTypeId} not found. Defaulted to '{floorType.Name}' (ID: {floorType.Id.Value})");
+                                    _warnings.Add($"Requested floor typeId {requestedTypeId} not found. Defaulted to '{floorType.Name}' (ID: {floorType.Id.GetIntValue()})");
                                 }
                             }
                             break;
@@ -136,7 +136,7 @@ namespace RevitMCPCommandSet.Services
                                 }
                                 if (requestedTypeId != -1 && requestedTypeId != 0)
                                 {
-                                    _warnings.Add($"Requested roof typeId {requestedTypeId} not found. Defaulted to '{roofType.Name}' (ID: {roofType.Id.Value})");
+                                    _warnings.Add($"Requested roof typeId {requestedTypeId} not found. Defaulted to '{roofType.Name}' (ID: {roofType.Id.GetIntValue()})");
                                 }
                             }
                             break;
@@ -156,7 +156,7 @@ namespace RevitMCPCommandSet.Services
                                 }
                                 if (requestedTypeId != -1 && requestedTypeId != 0)
                                 {
-                                    _warnings.Add($"Requested ceiling typeId {requestedTypeId} not found. Defaulted to '{ceilingType.Name}' (ID: {ceilingType.Id.Value})");
+                                    _warnings.Add($"Requested ceiling typeId {requestedTypeId} not found. Defaulted to '{ceilingType.Name}' (ID: {ceilingType.Id.GetIntValue()})");
                                 }
                             }
                             break;
@@ -198,8 +198,8 @@ namespace RevitMCPCommandSet.Services
                                 }
                                 CurveLoop curveLoop = CurveLoop.Create(data.Boundary.OuterLoop.Select(l => JZLine.ToLine(l) as Curve).ToList());
 
-                                // 多版本
-#if REVIT2022_OR_GREATER
+                                // 多版本 - Floor.Create introduced in Revit 2022 but stable in 2023+
+#if REVIT2023_OR_GREATER
                                 floor = Floor.Create(doc, new List<CurveLoop> { curveLoop }, floorType.Id, baseLevel.Id);
 #else
                                 floor = doc.Create.NewFloor(curves, floorType, baseLevel, _structural);
@@ -208,7 +208,7 @@ namespace RevitMCPCommandSet.Services
                                 if (floor != null)
                                 {
                                     floor.get_Parameter(BuiltInParameter.FLOOR_HEIGHTABOVELEVEL_PARAM).Set(baseOffset);
-                                    elementIds.Add((int)floor.Id.Value);
+                                    elementIds.Add(floor.Id.GetIntValue());
                                 }
                                 break;
                             case BuiltInCategory.OST_Roofs:
@@ -234,7 +234,7 @@ namespace RevitMCPCommandSet.Services
                                     {
                                         offsetParam.Set(baseOffset);
                                     }
-                                    elementIds.Add((int)roof.Id.Value);
+                                    elementIds.Add(roof.Id.GetIntValue());
                                 }
                                 break;
                             case BuiltInCategory.OST_Ceilings:
@@ -243,13 +243,9 @@ namespace RevitMCPCommandSet.Services
 #if REVIT2022_OR_GREATER
                                 Ceiling ceiling = Ceiling.Create(doc, new List<CurveLoop> { ceilingCurveLoop }, ceilingType.Id, baseLevel.Id);
 #else
-                                // For older Revit versions, use the document create method
-                                CurveArray ceilingCurves = new CurveArray();
-                                foreach (var jzLine in data.Boundary.OuterLoop)
-                                {
-                                    ceilingCurves.Append(JZLine.ToLine(jzLine));
-                                }
-                                Ceiling ceiling = doc.Create.NewCeiling(ceilingCurves, ceilingType, baseLevel);
+                                // Ceiling.Create API not available before Revit 2022
+                                Ceiling ceiling = null;
+                                _warnings.Add("Ceiling creation is not supported in Revit versions before 2022.");
 #endif
                                 if (ceiling != null)
                                 {
@@ -259,7 +255,7 @@ namespace RevitMCPCommandSet.Services
                                     {
                                         ceilingOffsetParam.Set(baseOffset);
                                     }
-                                    elementIds.Add((int)ceiling.Id.Value);
+                                    elementIds.Add(ceiling.Id.GetIntValue());
                                 }
                                 break;
                             default:

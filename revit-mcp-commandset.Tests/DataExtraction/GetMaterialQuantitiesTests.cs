@@ -1,17 +1,19 @@
 using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
+using Nice3point.TUnit.Revit.Executors;
+using TUnit.Core;
+using TUnit.Core.Executors;
 
 namespace RevitMCPCommandSet.Tests.DataExtraction;
 
-[ClassSetup]
-[ClassCleanup]
 public class GetMaterialQuantitiesTests : RevitApiTest
 {
-    private Document _doc;
-    private Level _level;
+    private static Document _doc;
+    private static Level _level;
 
-    [ClassSetup]
-    public void Setup()
+    [Before(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Setup()
     {
         _doc = Application.NewProjectDocument(UnitSystem.Imperial);
 
@@ -29,21 +31,22 @@ public class GetMaterialQuantitiesTests : RevitApiTest
         tx.Commit();
     }
 
-    [ClassCleanup]
-    public void Cleanup()
+    [After(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Cleanup()
     {
         _doc?.Close(false);
     }
 
     [Test]
-    public void ExtractMaterials_FromWalls_MaterialNamesPopulated()
+    public async Task ExtractMaterials_FromWalls_MaterialNamesPopulated()
     {
         var walls = new FilteredElementCollector(_doc)
             .OfCategory(BuiltInCategory.OST_Walls)
             .WhereElementIsNotElementType()
             .ToElements();
 
-        Assert.That(walls.Count, Is.GreaterThan(0));
+        await Assert.That(walls.Count).IsGreaterThan(0);
 
         var materialData = new Dictionary<ElementId, (string Name, string Class, double Area, double Volume, HashSet<ElementId> Elements)>();
 
@@ -70,16 +73,16 @@ public class GetMaterialQuantitiesTests : RevitApiTest
         }
 
         // Walls in a default template should have at least one material
-        Assert.That(materialData.Count, Is.GreaterThan(0));
+        await Assert.That(materialData.Count).IsGreaterThan(0);
 
         foreach (var kvp in materialData)
         {
-            Assert.That(kvp.Value.Name, Is.Not.Null.And.Not.Empty);
+            await Assert.That(kvp.Value.Name).IsNotNullOrEmpty();
         }
     }
 
     [Test]
-    public void FilterByCategory_WallsOnly_OnlyWallMaterialsReturned()
+    public async Task FilterByCategory_WallsOnly_OnlyWallMaterialsReturned()
     {
         var builtInCategories = new List<BuiltInCategory> { BuiltInCategory.OST_Walls };
         var filter = new ElementMulticategoryFilter(builtInCategories);
@@ -92,17 +95,13 @@ public class GetMaterialQuantitiesTests : RevitApiTest
         // All returned elements should be walls
         foreach (var element in elements)
         {
-            Assert.That(element.Category, Is.Not.Null);
-#if REVIT2024_OR_GREATER
-            Assert.That(element.Category.Id.Value, Is.EqualTo((long)BuiltInCategory.OST_Walls));
-#else
-            Assert.That(element.Category.Id.IntegerValue, Is.EqualTo((int)BuiltInCategory.OST_Walls));
-#endif
+            await Assert.That(element.Category).IsNotNull();
+            await Assert.That(element.Category.Id.Value).IsEqualTo((long)BuiltInCategory.OST_Walls);
         }
     }
 
     [Test]
-    public void MaterialAreaVolume_Accumulation_ValuesNonNegative()
+    public async Task MaterialAreaVolume_Accumulation_ValuesNonNegative()
     {
         var walls = new FilteredElementCollector(_doc)
             .OfCategory(BuiltInCategory.OST_Walls)
@@ -120,20 +119,20 @@ public class GetMaterialQuantitiesTests : RevitApiTest
                 double area = element.GetMaterialArea(matId, false);
                 double volume = element.GetMaterialVolume(matId);
 
-                Assert.That(area, Is.GreaterThanOrEqualTo(0));
-                Assert.That(volume, Is.GreaterThanOrEqualTo(0));
+                await Assert.That(area).IsGreaterThanOrEqualTo(0);
+                await Assert.That(volume).IsGreaterThanOrEqualTo(0);
 
                 totalArea += area;
                 totalVolume += volume;
             }
         }
 
-        Assert.That(totalArea, Is.GreaterThanOrEqualTo(0));
-        Assert.That(totalVolume, Is.GreaterThanOrEqualTo(0));
+        await Assert.That(totalArea).IsGreaterThanOrEqualTo(0);
+        await Assert.That(totalVolume).IsGreaterThanOrEqualTo(0);
     }
 
     [Test]
-    public void ElementCountPerMaterial_TracksUniqueElements()
+    public async Task ElementCountPerMaterial_TracksUniqueElements()
     {
         var walls = new FilteredElementCollector(_doc)
             .OfCategory(BuiltInCategory.OST_Walls)
@@ -158,13 +157,13 @@ public class GetMaterialQuantitiesTests : RevitApiTest
         {
             // Element count should match the unique element set count
             int elementCount = kvp.Value.Count;
-            Assert.That(elementCount, Is.GreaterThan(0));
+            await Assert.That(elementCount).IsGreaterThan(0);
 
             // Adding the same element twice should not increase count
             var testSet = new HashSet<ElementId>(kvp.Value);
             int countBefore = testSet.Count;
             testSet.Add(kvp.Value.First()); // Add duplicate
-            Assert.That(testSet.Count, Is.EqualTo(countBefore));
+            await Assert.That(testSet.Count).IsEqualTo(countBefore);
         }
     }
 }

@@ -1,18 +1,20 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using Nice3point.TUnit.Revit;
+using Nice3point.TUnit.Revit.Executors;
+using TUnit.Core;
+using TUnit.Core.Executors;
 
 namespace RevitMCPCommandSet.Tests.DataExtraction;
 
-[ClassSetup]
-[ClassCleanup]
 public class ExportRoomDataTests : RevitApiTest
 {
-    private Document _doc;
-    private Level _level;
+    private static Document _doc;
+    private static Level _level;
 
-    [ClassSetup]
-    public void Setup()
+    [Before(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Setup()
     {
         _doc = Application.NewProjectDocument(UnitSystem.Imperial);
 
@@ -57,14 +59,15 @@ public class ExportRoomDataTests : RevitApiTest
         tx.Commit();
     }
 
-    [ClassCleanup]
-    public void Cleanup()
+    [After(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Cleanup()
     {
         _doc?.Close(false);
     }
 
     [Test]
-    public void ExportRooms_PlacedRoom_NameNumberLevelAreaPopulated()
+    public async Task ExportRooms_PlacedRoom_NameNumberLevelAreaPopulated()
     {
         var rooms = new FilteredElementCollector(_doc)
             .OfCategory(BuiltInCategory.OST_Rooms)
@@ -73,7 +76,7 @@ public class ExportRoomDataTests : RevitApiTest
             .Where(r => r.Area > 0)
             .ToList();
 
-        Assert.That(rooms.Count, Is.GreaterThan(0));
+        await Assert.That(rooms.Count).IsGreaterThan(0);
 
         var room = rooms.First();
         string name = room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString() ?? "";
@@ -81,14 +84,14 @@ public class ExportRoomDataTests : RevitApiTest
         string level = room.Level?.Name ?? "No Level";
         double area = room.Area;
 
-        Assert.That(name, Is.Not.Empty);
-        Assert.That(number, Is.Not.Empty);
-        Assert.That(level, Is.Not.EqualTo("No Level"));
-        Assert.That(area, Is.GreaterThan(0));
+        await Assert.That(name).IsNotNullOrEmpty();
+        await Assert.That(number).IsNotNullOrEmpty();
+        await Assert.That(level).IsNotEqualTo("No Level");
+        await Assert.That(area).IsGreaterThan(0);
     }
 
     [Test]
-    public void ExportRooms_SkipUnplaced_UnplacedRoomsExcluded()
+    public async Task ExportRooms_SkipUnplaced_UnplacedRoomsExcluded()
     {
         // Create an unplaced room
         using (var tx = new Transaction(_doc, "Create Unplaced Room"))
@@ -114,14 +117,13 @@ public class ExportRoomDataTests : RevitApiTest
 
         // Filter like the handler does (skip Area == 0)
         var placedRooms = allRooms.Where(r => r.Area > 0).ToList();
-        var unplacedRooms = allRooms.Where(r => r.Area == 0).ToList();
 
-        Assert.That(placedRooms.Count, Is.GreaterThan(0));
-        Assert.That(placedRooms.Count, Is.LessThanOrEqualTo(allRooms.Count));
+        await Assert.That(placedRooms.Count).IsGreaterThan(0);
+        await Assert.That(placedRooms.Count).IsLessThanOrEqualTo(allRooms.Count);
     }
 
     [Test]
-    public void ExportRooms_IncludeUnplaced_AllRoomsReturned()
+    public async Task ExportRooms_IncludeUnplaced_AllRoomsReturned()
     {
         var allRooms = new FilteredElementCollector(_doc)
             .OfCategory(BuiltInCategory.OST_Rooms)
@@ -135,11 +137,11 @@ public class ExportRoomDataTests : RevitApiTest
             .Where(r => includeUnplacedRooms || r.Area > 0)
             .ToList();
 
-        Assert.That(result.Count, Is.EqualTo(allRooms.Count));
+        await Assert.That(result.Count).IsEqualTo(allRooms.Count);
     }
 
     [Test]
-    public void ExportRooms_TotalAreaAccumulation_MatchesSumOfRoomAreas()
+    public async Task ExportRooms_TotalAreaAccumulation_MatchesSumOfRoomAreas()
     {
         var rooms = new FilteredElementCollector(_doc)
             .OfCategory(BuiltInCategory.OST_Rooms)
@@ -155,7 +157,7 @@ public class ExportRoomDataTests : RevitApiTest
         }
 
         double expectedTotal = rooms.Sum(r => r.Area);
-        Assert.That(totalArea, Is.EqualTo(expectedTotal).Within(0.001));
-        Assert.That(totalArea, Is.GreaterThan(0));
+        await Assert.That(totalArea).IsEqualTo(expectedTotal).Within(0.001);
+        await Assert.That(totalArea).IsGreaterThan(0);
     }
 }

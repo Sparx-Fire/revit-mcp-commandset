@@ -1,18 +1,20 @@
 using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
+using Nice3point.TUnit.Revit.Executors;
+using TUnit.Core;
+using TUnit.Core.Executors;
 
 namespace RevitMCPCommandSet.Tests;
 
-[ClassSetup]
-[ClassCleanup]
 public class ColorSplashTests : RevitApiTest
 {
-    private Document _doc;
-    private Level _level;
-    private ViewPlan _floorPlan;
+    private static Document _doc;
+    private static Level _level;
+    private static ViewPlan _floorPlan;
 
-    [ClassSetup]
-    public void Setup()
+    [Before(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Setup()
     {
         _doc = Application.NewProjectDocument(UnitSystem.Imperial);
 
@@ -45,14 +47,15 @@ public class ColorSplashTests : RevitApiTest
         tx.Commit();
     }
 
-    [ClassCleanup]
-    public void Cleanup()
+    [After(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Cleanup()
     {
         _doc?.Close(false);
     }
 
     [Test]
-    public void GroupElementsByParameter_WallComments_GroupsCorrectly()
+    public async Task GroupElementsByParameter_WallComments_GroupsCorrectly()
     {
         // Set comments on walls to create groups
         var walls = new FilteredElementCollector(_doc)
@@ -60,7 +63,7 @@ public class ColorSplashTests : RevitApiTest
             .WhereElementIsNotElementType()
             .ToElements();
 
-        Assert.That(walls.Count, Is.GreaterThanOrEqualTo(3));
+        await Assert.That(walls.Count).IsGreaterThanOrEqualTo(3);
 
         using (var tx = new Transaction(_doc, "Set Wall Comments"))
         {
@@ -90,22 +93,22 @@ public class ColorSplashTests : RevitApiTest
             groups[value].Add(wall.Id);
         }
 
-        Assert.That(groups.ContainsKey("Group A"), Is.True);
-        Assert.That(groups.ContainsKey("Group B"), Is.True);
-        Assert.That(groups["Group A"].Count, Is.EqualTo(2));
+        await Assert.That(groups.ContainsKey("Group A")).IsTrue();
+        await Assert.That(groups.ContainsKey("Group B")).IsTrue();
+        await Assert.That(groups["Group A"].Count).IsEqualTo(2);
     }
 
     [Test]
-    public void ApplyGraphicOverrides_SetColor_OverrideApplied()
+    public async Task ApplyGraphicOverrides_SetColor_OverrideApplied()
     {
-        Assert.That(_floorPlan, Is.Not.Null);
+        await Assert.That(_floorPlan).IsNotNull();
 
         var walls = new FilteredElementCollector(_doc)
             .OfCategory(BuiltInCategory.OST_Walls)
             .WhereElementIsNotElementType()
             .ToElements();
 
-        Assert.That(walls.Count, Is.GreaterThan(0));
+        await Assert.That(walls.Count).IsGreaterThan(0);
 
         using var tx = new Transaction(_doc, "Apply Overrides");
         tx.Start();
@@ -121,13 +124,13 @@ public class ColorSplashTests : RevitApiTest
         tx.Commit();
 
         var applied = _floorPlan.GetElementOverrides(targetId);
-        Assert.That(applied.ProjectionLineColor.Red, Is.EqualTo(255));
-        Assert.That(applied.ProjectionLineColor.Green, Is.EqualTo(0));
-        Assert.That(applied.ProjectionLineColor.Blue, Is.EqualTo(0));
+        await Assert.That((int)applied.ProjectionLineColor.Red).IsEqualTo(255);
+        await Assert.That((int)applied.ProjectionLineColor.Green).IsEqualTo(0);
+        await Assert.That((int)applied.ProjectionLineColor.Blue).IsEqualTo(0);
     }
 
     [Test]
-    public void FindSolidFillPattern_InDocument_PatternFound()
+    public async Task FindSolidFillPattern_InDocument_PatternFound()
     {
         var solidFillId = ElementId.InvalidElementId;
 
@@ -145,11 +148,11 @@ public class ColorSplashTests : RevitApiTest
             }
         }
 
-        Assert.That(solidFillId, Is.Not.EqualTo(ElementId.InvalidElementId));
+        await Assert.That(solidFillId).IsNotEqualTo(ElementId.InvalidElementId);
     }
 
     [Test]
-    public void CustomColorMapping_ArrayOfColors_MapsCorrectly()
+    public async Task CustomColorMapping_ArrayOfColors_MapsCorrectly()
     {
         var paramValues = new List<string> { "Value A", "Value B", "Value C" };
         var customColors = new List<int[]>
@@ -166,13 +169,13 @@ public class ColorSplashTests : RevitApiTest
                 colorMap[paramValues[i]] = customColors[i];
         }
 
-        Assert.That(colorMap["Value A"], Is.EqualTo(new[] { 255, 0, 0 }));
-        Assert.That(colorMap["Value B"], Is.EqualTo(new[] { 0, 255, 0 }));
-        Assert.That(colorMap["Value C"], Is.EqualTo(new[] { 0, 0, 255 }));
+        await Assert.That(colorMap["Value A"].SequenceEqual(new[] { 255, 0, 0 })).IsTrue();
+        await Assert.That(colorMap["Value B"].SequenceEqual(new[] { 0, 255, 0 })).IsTrue();
+        await Assert.That(colorMap["Value C"].SequenceEqual(new[] { 0, 0, 255 })).IsTrue();
     }
 
     [Test]
-    public void GradientColorGeneration_BlueToRed_InterpolatesCorrectly()
+    public async Task GradientColorGeneration_BlueToRed_InterpolatesCorrectly()
     {
         var paramValues = new List<string> { "Low", "Mid", "High" };
         int[] startColor = { 0, 0, 180 };
@@ -192,15 +195,15 @@ public class ColorSplashTests : RevitApiTest
         }
 
         // First should be blue (0,0,180)
-        Assert.That(colorMap["Low"][0], Is.EqualTo(0));
-        Assert.That(colorMap["Low"][2], Is.EqualTo(180));
+        await Assert.That(colorMap["Low"][0]).IsEqualTo(0);
+        await Assert.That(colorMap["Low"][2]).IsEqualTo(180);
 
         // Last should be red (180,0,0)
-        Assert.That(colorMap["High"][0], Is.EqualTo(180));
-        Assert.That(colorMap["High"][2], Is.EqualTo(0));
+        await Assert.That(colorMap["High"][0]).IsEqualTo(180);
+        await Assert.That(colorMap["High"][2]).IsEqualTo(0);
 
         // Mid should be interpolated (90,0,90)
-        Assert.That(colorMap["Mid"][0], Is.EqualTo(90));
-        Assert.That(colorMap["Mid"][2], Is.EqualTo(90));
+        await Assert.That(colorMap["Mid"][0]).IsEqualTo(90);
+        await Assert.That(colorMap["Mid"][2]).IsEqualTo(90);
     }
 }

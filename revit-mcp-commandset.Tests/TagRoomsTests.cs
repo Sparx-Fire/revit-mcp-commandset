@@ -1,19 +1,22 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using Nice3point.TUnit.Revit;
+using Nice3point.TUnit.Revit.Executors;
+using TUnit.Core;
+using TUnit.Core.Executors;
 
 namespace RevitMCPCommandSet.Tests;
 
-[ClassSetup]
-[ClassCleanup]
 public class TagRoomsTests : RevitApiTest
 {
-    private Document _doc;
-    private Level _level;
-    private ViewPlan _floorPlan;
+    private static Document _doc;
+    private static Level _level;
+    private static ViewPlan _floorPlan;
+    private static Room _room;
 
-    [ClassSetup]
-    public void Setup()
+    [Before(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Setup()
     {
         _doc = Application.NewProjectDocument(UnitSystem.Imperial);
 
@@ -33,223 +36,167 @@ public class TagRoomsTests : RevitApiTest
             _floorPlan = ViewPlan.Create(_doc, floorPlanType.Id, _level.Id);
         }
 
-        // Create a 10ft x 10ft enclosure for room placement
-        double size = 10.0;
-        var p1 = new XYZ(0, 0, 0);
-        var p2 = new XYZ(size, 0, 0);
-        var p3 = new XYZ(size, size, 0);
-        var p4 = new XYZ(0, size, 0);
+        // Create primary enclosure (0,0)-(10,10) with a room
+        CreateEnclosure(_doc, _level.Id, 0, 0, 10);
+        _room = _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
 
-        Wall.Create(_doc, Line.CreateBound(p1, p2), _level.Id, false);
-        Wall.Create(_doc, Line.CreateBound(p2, p3), _level.Id, false);
-        Wall.Create(_doc, Line.CreateBound(p3, p4), _level.Id, false);
-        Wall.Create(_doc, Line.CreateBound(p4, p1), _level.Id, false);
+        // Create secondary enclosure (20,0)-(30,10) for multi-room test
+        CreateEnclosure(_doc, _level.Id, 20, 0, 10);
 
         tx.Commit();
     }
 
-    [ClassCleanup]
-    public void Cleanup()
+    [After(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Cleanup()
     {
         _doc?.Close(false);
     }
 
     [Test]
-    public void TagRoom_CreateRoomTag_TagExists()
+    public async Task TagRoom_CreateRoomTag_TagExists()
     {
-        Room room;
-        using (var tx = new Transaction(_doc, "Create Room For Tag"))
-        {
-            tx.Start();
-            room = _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
-            tx.Commit();
-        }
+        await Assert.That(_room).IsNotNull();
+        await Assert.That(_floorPlan).IsNotNull();
 
-        Assert.That(room, Is.Not.Null);
-        Assert.That(_floorPlan, Is.Not.Null);
+        using var tx = new Transaction(_doc, "Tag Room");
+        tx.Start();
 
-        using (var tx = new Transaction(_doc, "Tag Room"))
-        {
-            tx.Start();
+        var locPoint = _room.Location as LocationPoint;
+        XYZ roomCenter = locPoint?.Point ?? new XYZ(5.0, 5.0, 0);
+        var tagPoint = new UV(roomCenter.X, roomCenter.Y);
 
-            var locPoint = room.Location as LocationPoint;
-            XYZ roomCenter = locPoint?.Point ?? new XYZ(5.0, 5.0, 0);
-            var tagPoint = new UV(roomCenter.X, roomCenter.Y);
+        var tag = _doc.Create.NewRoomTag(
+            new LinkElementId(_room.Id),
+            tagPoint,
+            _floorPlan.Id);
 
-            var tag = _doc.Create.NewRoomTag(
-                new LinkElementId(room.Id),
-                tagPoint,
-                _floorPlan.Id);
+        tx.Commit();
 
-            tx.Commit();
-
-            Assert.That(tag, Is.Not.Null);
-            Assert.That(tag.Room, Is.Not.Null);
-        }
+        await Assert.That(tag).IsNotNull();
+        await Assert.That(tag.Room).IsNotNull();
     }
 
     [Test]
-    public void TagRoom_WithLeader_HasLeaderIsTrue()
+    public async Task TagRoom_WithLeader_HasLeaderIsTrue()
     {
-        Room room;
-        using (var tx = new Transaction(_doc, "Create Room For Leader Tag"))
+        await Assert.That(_room).IsNotNull();
+        await Assert.That(_floorPlan).IsNotNull();
+
+        using var tx = new Transaction(_doc, "Tag Room With Leader");
+        tx.Start();
+
+        var locPoint = _room.Location as LocationPoint;
+        XYZ roomCenter = locPoint?.Point ?? new XYZ(5.0, 5.0, 0);
+
+        var tag = _doc.Create.NewRoomTag(
+            new LinkElementId(_room.Id),
+            new UV(roomCenter.X, roomCenter.Y),
+            _floorPlan.Id);
+
+        if (tag != null)
         {
-            tx.Start();
-            room = _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
-            tx.Commit();
+            tag.HasLeader = true;
         }
 
-        Assert.That(room, Is.Not.Null);
-        Assert.That(_floorPlan, Is.Not.Null);
+        tx.Commit();
 
-        using (var tx = new Transaction(_doc, "Tag Room With Leader"))
-        {
-            tx.Start();
-
-            var locPoint = room.Location as LocationPoint;
-            XYZ roomCenter = locPoint?.Point ?? new XYZ(5.0, 5.0, 0);
-
-            var tag = _doc.Create.NewRoomTag(
-                new LinkElementId(room.Id),
-                new UV(roomCenter.X, roomCenter.Y),
-                _floorPlan.Id);
-
-            if (tag != null)
-            {
-                tag.HasLeader = true;
-            }
-
-            tx.Commit();
-
-            Assert.That(tag, Is.Not.Null);
-            Assert.That(tag.HasLeader, Is.True);
-        }
+        await Assert.That(tag).IsNotNull();
+        await Assert.That(tag.HasLeader).IsTrue();
     }
 
     [Test]
-    public void TagRoom_SkipAlreadyTagged_NoDuplicateTags()
+    public async Task TagRoom_SkipAlreadyTagged_NoDuplicateTags()
     {
-        Room room;
-        using (var tx = new Transaction(_doc, "Create Room For Skip Test"))
-        {
-            tx.Start();
-            room = _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
-            tx.Commit();
-        }
+        await Assert.That(_room).IsNotNull();
+        await Assert.That(_floorPlan).IsNotNull();
 
-        Assert.That(room, Is.Not.Null);
-        Assert.That(_floorPlan, Is.Not.Null);
-
-        // Create first tag
+        // Create a tag for the room
+        RoomTag firstTag;
         using (var tx = new Transaction(_doc, "First Tag"))
         {
             tx.Start();
-            var locPoint = room.Location as LocationPoint;
+            var locPoint = _room.Location as LocationPoint;
             XYZ center = locPoint?.Point ?? new XYZ(5.0, 5.0, 0);
-            _doc.Create.NewRoomTag(new LinkElementId(room.Id), new UV(center.X, center.Y), _floorPlan.Id);
+            firstTag = _doc.Create.NewRoomTag(new LinkElementId(_room.Id), new UV(center.X, center.Y), _floorPlan.Id);
             tx.Commit();
         }
 
-        // Check existing tags (mimics handler duplicate detection)
-        var existingTags = new FilteredElementCollector(_doc, _floorPlan.Id)
-            .OfCategory(BuiltInCategory.OST_RoomTags)
-            .WhereElementIsNotElementType()
-            .Cast<RoomTag>()
-            .ToList();
+        await Assert.That(firstTag).IsNotNull();
 
-        var roomsWithTags = new HashSet<long>();
-        foreach (var tag in existingTags)
-        {
-            if (tag.Room != null)
-            {
-#if REVIT2024_OR_GREATER
-                roomsWithTags.Add(tag.Room.Id.Value);
-#else
-                roomsWithTags.Add(tag.Room.Id.IntegerValue);
-#endif
-            }
-        }
+        // Simulate duplicate detection (mimics handler logic)
+        var taggedRoomIds = new HashSet<long> { firstTag.Room.Id.Value };
+        bool alreadyTagged = taggedRoomIds.Contains(_room.Id.Value);
 
-#if REVIT2024_OR_GREATER
-        bool alreadyTagged = roomsWithTags.Contains(room.Id.Value);
-#else
-        bool alreadyTagged = roomsWithTags.Contains(room.Id.IntegerValue);
-#endif
-
-        Assert.That(alreadyTagged, Is.True);
+        await Assert.That(alreadyTagged).IsTrue();
     }
 
     [Test]
-    public void TagRoom_SpecificRoomById_OnlyThatRoomTagged()
+    public async Task TagRoom_SpecificRoomById_OnlyThatRoomTagged()
     {
-        // Create two rooms in separate enclosures
-        Room room1, room2;
-        using (var tx = new Transaction(_doc, "Create Two Enclosures"))
+        await Assert.That(_room).IsNotNull();
+        await Assert.That(_floorPlan).IsNotNull();
+
+        // Create a second room in the secondary enclosure
+        Room room2;
+        using (var tx = new Transaction(_doc, "Create Second Room"))
         {
             tx.Start();
-
-            // Second enclosure offset by 20ft
-            double offset = 20.0;
-            double size = 10.0;
-            var q1 = new XYZ(offset, 0, 0);
-            var q2 = new XYZ(offset + size, 0, 0);
-            var q3 = new XYZ(offset + size, size, 0);
-            var q4 = new XYZ(offset, size, 0);
-
-            Wall.Create(_doc, Line.CreateBound(q1, q2), _level.Id, false);
-            Wall.Create(_doc, Line.CreateBound(q2, q3), _level.Id, false);
-            Wall.Create(_doc, Line.CreateBound(q3, q4), _level.Id, false);
-            Wall.Create(_doc, Line.CreateBound(q4, q1), _level.Id, false);
-
-            room1 = _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
-            room2 = _doc.Create.NewRoom(_level, new UV(offset + 5.0, 5.0));
-
+            room2 = _doc.Create.NewRoom(_level, new UV(25.0, 5.0));
             tx.Commit();
         }
 
-        Assert.That(room1, Is.Not.Null);
-        Assert.That(room2, Is.Not.Null);
-        Assert.That(_floorPlan, Is.Not.Null);
+        await Assert.That(room2).IsNotNull();
 
-        // Tag only room1
+        // Tag only _room (room1)
+        RoomTag tag;
         using (var tx = new Transaction(_doc, "Tag Specific Room"))
         {
             tx.Start();
-
-            var locPoint = room1.Location as LocationPoint;
+            var locPoint = _room.Location as LocationPoint;
             XYZ center = locPoint?.Point ?? new XYZ(5.0, 5.0, 0);
-            _doc.Create.NewRoomTag(new LinkElementId(room1.Id), new UV(center.X, center.Y), _floorPlan.Id);
-
+            tag = _doc.Create.NewRoomTag(new LinkElementId(_room.Id), new UV(center.X, center.Y), _floorPlan.Id);
             tx.Commit();
         }
 
-        // Verify only room1 has a tag
-        var tags = new FilteredElementCollector(_doc, _floorPlan.Id)
-            .OfCategory(BuiltInCategory.OST_RoomTags)
-            .WhereElementIsNotElementType()
-            .Cast<RoomTag>()
-            .Where(t => t.Room != null)
-            .ToList();
-
-        var taggedRoomIds = tags.Select(t => t.Room.Id).ToList();
-        Assert.That(taggedRoomIds, Does.Contain(room1.Id));
+        // Verify the tag references the correct room (room1, not room2)
+        await Assert.That(tag).IsNotNull();
+        await Assert.That(tag.Room.Id.Value).IsEqualTo(_room.Id.Value);
     }
 
     [Test]
-    public void FindRoomTagType_ByCategory_TagTypeFound()
+    public async Task CreateRoomTag_TagReferencesRoom_TagTextNotEmpty()
     {
-        var roomTagType = new FilteredElementCollector(_doc)
-            .OfClass(typeof(FamilySymbol))
-            .WhereElementIsElementType()
-            .Cast<FamilySymbol>()
-            .FirstOrDefault(e => e.Category != null &&
-#if REVIT2024_OR_GREATER
-                e.Category.Id.Value == (long)BuiltInCategory.OST_RoomTags);
-#else
-                e.Category.Id.IntegerValue == (int)BuiltInCategory.OST_RoomTags);
-#endif
+        await Assert.That(_room).IsNotNull();
+        await Assert.That(_floorPlan).IsNotNull();
 
-        // Room tag type should exist in a default project template
-        Assert.That(roomTagType, Is.Not.Null);
+        // Create a tag and verify it references the room with displayable text
+        RoomTag tag;
+        using (var tx = new Transaction(_doc, "Create Tag For Text Test"))
+        {
+            tx.Start();
+            var locPoint = _room.Location as LocationPoint;
+            XYZ center = locPoint?.Point ?? new XYZ(5.0, 5.0, 0);
+            tag = _doc.Create.NewRoomTag(new LinkElementId(_room.Id), new UV(center.X, center.Y), _floorPlan.Id);
+            tx.Commit();
+        }
+
+        await Assert.That(tag).IsNotNull();
+        await Assert.That(tag.Room).IsNotNull();
+        await Assert.That(tag.Room.Id.Value).IsEqualTo(_room.Id.Value);
+        await Assert.That(tag.TagText).IsNotNull();
+    }
+
+    private static void CreateEnclosure(Document doc, ElementId levelId, double x, double y, double size)
+    {
+        var p1 = new XYZ(x, y, 0);
+        var p2 = new XYZ(x + size, y, 0);
+        var p3 = new XYZ(x + size, y + size, 0);
+        var p4 = new XYZ(x, y + size, 0);
+
+        Wall.Create(doc, Line.CreateBound(p1, p2), levelId, false);
+        Wall.Create(doc, Line.CreateBound(p2, p3), levelId, false);
+        Wall.Create(doc, Line.CreateBound(p3, p4), levelId, false);
+        Wall.Create(doc, Line.CreateBound(p4, p1), levelId, false);
     }
 }

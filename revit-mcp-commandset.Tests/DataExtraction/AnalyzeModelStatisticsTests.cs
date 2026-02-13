@@ -1,16 +1,18 @@
 using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
+using Nice3point.TUnit.Revit.Executors;
+using TUnit.Core;
+using TUnit.Core.Executors;
 
 namespace RevitMCPCommandSet.Tests.DataExtraction;
 
-[ClassSetup]
-[ClassCleanup]
 public class AnalyzeModelStatisticsTests : RevitApiTest
 {
-    private Document _doc;
+    private static Document _doc;
 
-    [ClassSetup]
-    public void Setup()
+    [Before(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Setup()
     {
         _doc = Application.NewProjectDocument(UnitSystem.Imperial);
 
@@ -39,30 +41,31 @@ public class AnalyzeModelStatisticsTests : RevitApiTest
         tx.Commit();
     }
 
-    [ClassCleanup]
-    public void Cleanup()
+    [After(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Cleanup()
     {
         _doc?.Close(false);
     }
 
     [Test]
-    public void TotalElementCount_MatchesFilteredElementCollector()
+    public async Task TotalElementCount_MatchesFilteredElementCollector()
     {
         int totalElements = new FilteredElementCollector(_doc)
             .WhereElementIsNotElementType()
             .GetElementCount();
 
-        Assert.That(totalElements, Is.GreaterThan(0));
+        await Assert.That(totalElements).IsGreaterThan(0);
 
         int totalTypes = new FilteredElementCollector(_doc)
             .WhereElementIsElementType()
             .GetElementCount();
 
-        Assert.That(totalTypes, Is.GreaterThan(0));
+        await Assert.That(totalTypes).IsGreaterThan(0);
     }
 
     [Test]
-    public void CategoryGrouping_ElementsGroupedByCategory_CountsCorrect()
+    public async Task CategoryGrouping_ElementsGroupedByCategory_CountsCorrect()
     {
         var elements = new FilteredElementCollector(_doc)
             .WhereElementIsNotElementType()
@@ -80,16 +83,16 @@ public class AnalyzeModelStatisticsTests : RevitApiTest
         }
 
         // Should have at least walls category
-        Assert.That(categoryGroups.Count, Is.GreaterThan(0));
+        await Assert.That(categoryGroups.Count).IsGreaterThan(0);
 
         // Total of grouped counts should match elements with categories
         int groupedTotal = categoryGroups.Values.Sum();
         int elementsWithCategories = elements.Count(e => e.Category != null);
-        Assert.That(groupedTotal, Is.EqualTo(elementsWithCategories));
+        await Assert.That(groupedTotal).IsEqualTo(elementsWithCategories);
     }
 
     [Test]
-    public void LevelStatistics_ElevationAndElementCount_Populated()
+    public async Task LevelStatistics_ElevationAndElementCount_Populated()
     {
         var levels = new FilteredElementCollector(_doc)
             .OfClass(typeof(Level))
@@ -97,11 +100,11 @@ public class AnalyzeModelStatisticsTests : RevitApiTest
             .OrderBy(l => l.Elevation)
             .ToList();
 
-        Assert.That(levels.Count, Is.GreaterThan(0));
+        await Assert.That(levels.Count).IsGreaterThan(0);
 
         foreach (var level in levels)
         {
-            Assert.That(level.Name, Is.Not.Null.And.Not.Empty);
+            await Assert.That(level.Name).IsNotNullOrEmpty();
 
             int elementCount = new FilteredElementCollector(_doc)
                 .WhereElementIsNotElementType()
@@ -109,12 +112,12 @@ public class AnalyzeModelStatisticsTests : RevitApiTest
                 .Count();
 
             // Element count should be non-negative
-            Assert.That(elementCount, Is.GreaterThanOrEqualTo(0));
+            await Assert.That(elementCount).IsGreaterThanOrEqualTo(0);
         }
     }
 
     [Test]
-    public void ViewCounting_ExcludesTemplates_CountCorrect()
+    public async Task ViewCounting_ExcludesTemplates_CountCorrect()
     {
         var allViews = new FilteredElementCollector(_doc)
             .OfClass(typeof(View))
@@ -124,12 +127,12 @@ public class AnalyzeModelStatisticsTests : RevitApiTest
         int totalViewsExcludingTemplates = allViews.Count(v => !v.IsTemplate);
         int templateCount = allViews.Count(v => v.IsTemplate);
 
-        Assert.That(totalViewsExcludingTemplates, Is.GreaterThan(0));
-        Assert.That(totalViewsExcludingTemplates + templateCount, Is.EqualTo(allViews.Count));
+        await Assert.That(totalViewsExcludingTemplates).IsGreaterThan(0);
+        await Assert.That(totalViewsExcludingTemplates + templateCount).IsEqualTo(allViews.Count);
     }
 
     [Test]
-    public void DetailedTypeBreakdown_FamilyInstanceTypes_TrackedCorrectly()
+    public async Task DetailedTypeBreakdown_FamilyInstanceTypes_TrackedCorrectly()
     {
         var elements = new FilteredElementCollector(_doc)
             .WhereElementIsNotElementType()
@@ -167,14 +170,14 @@ public class AnalyzeModelStatisticsTests : RevitApiTest
         // Validate that all tracked types have positive instance counts
         foreach (var kvp in typeStats)
         {
-            Assert.That(kvp.Value.Count, Is.GreaterThan(0));
-            Assert.That(kvp.Value.TypeName, Is.Not.Null.And.Not.Empty);
+            await Assert.That(kvp.Value.Count).IsGreaterThan(0);
+            await Assert.That(kvp.Value.TypeName).IsNotNullOrEmpty();
         }
 
         // Family names should be a subset of all families
         foreach (var name in familyNames)
         {
-            Assert.That(name, Is.Not.Null.And.Not.Empty);
+            await Assert.That(name).IsNotNullOrEmpty();
         }
     }
 }

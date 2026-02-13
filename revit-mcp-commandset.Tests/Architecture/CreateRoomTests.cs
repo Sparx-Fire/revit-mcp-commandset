@@ -1,23 +1,25 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using Nice3point.TUnit.Revit;
+using Nice3point.TUnit.Revit.Executors;
+using TUnit.Core;
+using TUnit.Core.Executors;
 
 namespace RevitMCPCommandSet.Tests.Architecture;
 
-[ClassSetup]
-[ClassCleanup]
 public class CreateRoomTests : RevitApiTest
 {
-    private Document _doc;
-    private Level _level;
-    private ViewPlan _floorPlan;
+    private static Document _doc;
+    private static Level _level;
+    private static ViewPlan _floorPlan;
+    private static Room _room;
 
-    [ClassSetup]
-    public void Setup()
+    [Before(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Setup()
     {
         _doc = Application.NewProjectDocument(UnitSystem.Imperial);
 
-        // Create a level and floor plan, then build enclosing walls for room placement
         using var tx = new Transaction(_doc, "Setup Room Test Environment");
         tx.Start();
 
@@ -34,139 +36,105 @@ public class CreateRoomTests : RevitApiTest
             _floorPlan = ViewPlan.Create(_doc, floorPlanType.Id, _level.Id);
         }
 
-        // Create a 10ft x 10ft enclosure of walls for room placement
-        double size = 10.0; // feet
-        var p1 = new XYZ(0, 0, 0);
-        var p2 = new XYZ(size, 0, 0);
-        var p3 = new XYZ(size, size, 0);
-        var p4 = new XYZ(0, size, 0);
+        // Create primary enclosure (0,0)-(10,10) with a room
+        CreateEnclosure(_doc, _level.Id, 0, 0, 10);
+        _room = _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
 
-        Wall.Create(_doc, Line.CreateBound(p1, p2), _level.Id, false);
-        Wall.Create(_doc, Line.CreateBound(p2, p3), _level.Id, false);
-        Wall.Create(_doc, Line.CreateBound(p3, p4), _level.Id, false);
-        Wall.Create(_doc, Line.CreateBound(p4, p1), _level.Id, false);
+        // Create secondary enclosure (20,0)-(30,10) for rollback test
+        CreateEnclosure(_doc, _level.Id, 20, 0, 10);
 
         tx.Commit();
     }
 
-    [ClassCleanup]
-    public void Cleanup()
+    [After(HookType.Class)]
+    [HookExecutor<RevitThreadExecutor>]
+    public static void Cleanup()
     {
         _doc?.Close(false);
     }
 
     [Test]
-    public void CreateRoom_AtValidLocation_RoomExistsWithArea()
+    public async Task CreateRoom_AtValidLocation_RoomExistsWithArea()
     {
-        using var tx = new Transaction(_doc, "Create Room");
-        tx.Start();
-
-        // Place room at center of the 10x10 enclosure
-        var uv = new UV(5.0, 5.0);
-        var room = _doc.Create.NewRoom(_level, uv);
-
-        tx.Commit();
-
-        Assert.That(room, Is.Not.Null);
-        Assert.That(room.Area, Is.GreaterThan(0));
+        await Assert.That(_room).IsNotNull();
+        await Assert.That(_room.Area).IsGreaterThan(0);
     }
 
     [Test]
-    public void CreateRoom_SetName_RoomNameParameterSet()
+    public async Task CreateRoom_SetName_RoomNameParameterSet()
     {
-        using var tx = new Transaction(_doc, "Create Room With Name");
+        using var tx = new Transaction(_doc, "Set Room Name");
         tx.Start();
 
-        var room = _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
-        if (room != null)
+        var nameParam = _room.get_Parameter(BuiltInParameter.ROOM_NAME);
+        if (nameParam != null && !nameParam.IsReadOnly)
         {
-            var nameParam = room.get_Parameter(BuiltInParameter.ROOM_NAME);
-            if (nameParam != null && !nameParam.IsReadOnly)
-            {
-                nameParam.Set("Conference Room");
-            }
+            nameParam.Set("Conference Room");
         }
 
         tx.Commit();
 
-        if (room != null)
-        {
-            var nameParam = room.get_Parameter(BuiltInParameter.ROOM_NAME);
-            Assert.That(nameParam?.AsString(), Is.EqualTo("Conference Room"));
-        }
+        var readParam = _room.get_Parameter(BuiltInParameter.ROOM_NAME);
+        await Assert.That(readParam?.AsString()).IsEqualTo("Conference Room");
     }
 
     [Test]
-    public void CreateRoom_SetNumber_RoomNumberParameterSet()
+    public async Task CreateRoom_SetNumber_RoomNumberParameterSet()
     {
-        using var tx = new Transaction(_doc, "Create Room With Number");
+        using var tx = new Transaction(_doc, "Set Room Number");
         SuppressDuplicateNumberWarnings(tx);
         tx.Start();
 
-        var room = _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
-        if (room != null)
+        var numberParam = _room.get_Parameter(BuiltInParameter.ROOM_NUMBER);
+        if (numberParam != null && !numberParam.IsReadOnly)
         {
-            var numberParam = room.get_Parameter(BuiltInParameter.ROOM_NUMBER);
-            if (numberParam != null && !numberParam.IsReadOnly)
-            {
-                numberParam.Set("101");
-            }
+            numberParam.Set("101");
         }
 
         tx.Commit();
 
-        if (room != null)
-        {
-            var numberParam = room.get_Parameter(BuiltInParameter.ROOM_NUMBER);
-            Assert.That(numberParam?.AsString(), Is.EqualTo("101"));
-        }
+        var readParam = _room.get_Parameter(BuiltInParameter.ROOM_NUMBER);
+        await Assert.That(readParam?.AsString()).IsEqualTo("101");
     }
 
     [Test]
-    public void CreateRoom_SetDepartmentAndComments_ParametersSet()
+    public async Task CreateRoom_SetDepartmentAndComments_ParametersSet()
     {
-        using var tx = new Transaction(_doc, "Create Room With Dept");
+        using var tx = new Transaction(_doc, "Set Room Dept");
         tx.Start();
 
-        var room = _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
-        if (room != null)
+        var deptParam = _room.get_Parameter(BuiltInParameter.ROOM_DEPARTMENT);
+        if (deptParam != null && !deptParam.IsReadOnly)
         {
-            var deptParam = room.get_Parameter(BuiltInParameter.ROOM_DEPARTMENT);
-            if (deptParam != null && !deptParam.IsReadOnly)
-            {
-                deptParam.Set("Engineering");
-            }
+            deptParam.Set("Engineering");
+        }
 
-            var commentsParam = room.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
-            if (commentsParam != null && !commentsParam.IsReadOnly)
-            {
-                commentsParam.Set("Test comment");
-            }
+        var commentsParam = _room.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+        if (commentsParam != null && !commentsParam.IsReadOnly)
+        {
+            commentsParam.Set("Test comment");
         }
 
         tx.Commit();
 
-        if (room != null)
-        {
-            Assert.That(room.get_Parameter(BuiltInParameter.ROOM_DEPARTMENT)?.AsString(),
-                Is.EqualTo("Engineering"));
-            Assert.That(room.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString(),
-                Is.EqualTo("Test comment"));
-        }
+        await Assert.That(_room.get_Parameter(BuiltInParameter.ROOM_DEPARTMENT)?.AsString())
+            .IsEqualTo("Engineering");
+        await Assert.That(_room.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString())
+            .IsEqualTo("Test comment");
     }
 
     [Test]
-    public void CreateRoom_DuplicateNumber_UniqueNumberGenerated()
+    public async Task CreateRoom_DuplicateNumber_UniqueNumberGenerated()
     {
         var existingNumbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "200", "201", "202" };
         string uniqueNumber = GetUniqueRoomNumber("200", existingNumbers);
 
-        Assert.That(uniqueNumber, Is.Not.EqualTo("200"));
-        Assert.That(existingNumbers.Contains(uniqueNumber), Is.False);
+        await Assert.That(uniqueNumber).IsNotEqualTo("200");
+        await Assert.That(existingNumbers.Contains(uniqueNumber)).IsFalse();
     }
 
     [Test]
-    public void CreateRoom_MultipleRooms_AllGetUniqueNumbers()
+    public async Task CreateRoom_MultipleRooms_AllGetUniqueNumbers()
     {
         var existingNumbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var assignedNumbers = new List<string>();
@@ -179,11 +147,11 @@ public class CreateRoomTests : RevitApiTest
         }
 
         // All numbers should be unique
-        Assert.That(assignedNumbers.Distinct().Count(), Is.EqualTo(5));
+        await Assert.That(assignedNumbers.Distinct().Count()).IsEqualTo(5);
     }
 
     [Test]
-    public void CreateRoom_RollbackOnFailure_RoomNotPersisted()
+    public async Task CreateRoom_RollbackOnFailure_RoomNotPersisted()
     {
         int roomCountBefore = new FilteredElementCollector(_doc)
             .OfCategory(BuiltInCategory.OST_Rooms)
@@ -193,7 +161,8 @@ public class CreateRoomTests : RevitApiTest
         using (var tx = new Transaction(_doc, "Create Room Rollback"))
         {
             tx.Start();
-            _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
+            // Use secondary enclosure at (25, 5) so it doesn't conflict with _room
+            _doc.Create.NewRoom(_level, new UV(25.0, 5.0));
             tx.RollBack();
         }
 
@@ -202,39 +171,45 @@ public class CreateRoomTests : RevitApiTest
             .WhereElementIsNotElementType()
             .GetElementCount();
 
-        Assert.That(roomCountAfter, Is.EqualTo(roomCountBefore));
+        await Assert.That(roomCountAfter).IsEqualTo(roomCountBefore);
     }
 
     [Test]
-    public void CreateRoom_UpperLimitAndOffset_ParametersSet()
+    public async Task CreateRoom_UpperLimitAndOffset_ParametersSet()
     {
-        using var tx = new Transaction(_doc, "Create Room With Offset");
+        using var tx = new Transaction(_doc, "Set Room Offset");
         tx.Start();
 
-        var room = _doc.Create.NewRoom(_level, new UV(5.0, 5.0));
-        if (room != null)
-        {
-            double offsetMm = 3000;
-            double offsetFeet = offsetMm / 304.8;
+        double offsetMm = 3000;
+        double offsetFeet = offsetMm / 304.8;
 
-            var limitOffsetParam = room.get_Parameter(BuiltInParameter.ROOM_UPPER_OFFSET);
-            if (limitOffsetParam != null && !limitOffsetParam.IsReadOnly)
-            {
-                limitOffsetParam.Set(offsetFeet);
-            }
+        var limitOffsetParam = _room.get_Parameter(BuiltInParameter.ROOM_UPPER_OFFSET);
+        if (limitOffsetParam != null && !limitOffsetParam.IsReadOnly)
+        {
+            limitOffsetParam.Set(offsetFeet);
         }
 
         tx.Commit();
 
-        if (room != null)
-        {
-            var readParam = room.get_Parameter(BuiltInParameter.ROOM_UPPER_OFFSET);
-            Assert.That(readParam, Is.Not.Null);
-            Assert.That(readParam.AsDouble(), Is.EqualTo(3000.0 / 304.8).Within(0.001));
-        }
+        var readParam = _room.get_Parameter(BuiltInParameter.ROOM_UPPER_OFFSET);
+        await Assert.That(readParam).IsNotNull();
+        await Assert.That(readParam.AsDouble()).IsEqualTo(3000.0 / 304.8).Within(0.001);
     }
 
-    #region Helper Methods (mirroring handler logic)
+    #region Helper Methods
+
+    private static void CreateEnclosure(Document doc, ElementId levelId, double x, double y, double size)
+    {
+        var p1 = new XYZ(x, y, 0);
+        var p2 = new XYZ(x + size, y, 0);
+        var p3 = new XYZ(x + size, y + size, 0);
+        var p4 = new XYZ(x, y + size, 0);
+
+        Wall.Create(doc, Line.CreateBound(p1, p2), levelId, false);
+        Wall.Create(doc, Line.CreateBound(p2, p3), levelId, false);
+        Wall.Create(doc, Line.CreateBound(p3, p4), levelId, false);
+        Wall.Create(doc, Line.CreateBound(p4, p1), levelId, false);
+    }
 
     private static void SuppressDuplicateNumberWarnings(Transaction tx)
     {
@@ -244,9 +219,6 @@ public class CreateRoomTests : RevitApiTest
         tx.SetFailureHandlingOptions(failureOptions);
     }
 
-    /// <summary>
-    /// Mirrors GetUniqueRoomNumber from CreateRoomEventHandler
-    /// </summary>
     private static string GetUniqueRoomNumber(string baseNumber, HashSet<string> existingNumbers)
     {
         if (string.IsNullOrEmpty(baseNumber))
@@ -295,9 +267,6 @@ public class CreateRoomTests : RevitApiTest
         return baseNumber + "-" + Guid.NewGuid().ToString().Substring(0, 4);
     }
 
-    /// <summary>
-    /// Mirrors GetNextAvailableRoomNumber from CreateRoomEventHandler
-    /// </summary>
     private static string GetNextAvailableRoomNumber(HashSet<string> existingNumbers)
     {
         int maxNumber = 0;

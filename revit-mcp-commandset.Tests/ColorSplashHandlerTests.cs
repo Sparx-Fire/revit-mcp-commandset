@@ -86,8 +86,15 @@ public class ColorSplashHandlerTests : RevitApiTest
 
         dynamic result = handler.ColoringResults;
         await Assert.That((bool)result.success).IsTrue();
-        await Assert.That((int)result.totalElements).IsGreaterThan(0);
-        await Assert.That((int)result.coloredGroups).IsGreaterThanOrEqualTo(2);
+        await Assert.That((int)result.totalElements).IsEqualTo(3);
+        await Assert.That((int)result.coloredGroups).IsEqualTo(2);
+
+        // Verify each group has the correct element count
+        var results = (List<object>)result.results;
+        var groupA = results.Cast<dynamic>().First(r => (string)r.parameterValue == "Group A");
+        var groupB = results.Cast<dynamic>().First(r => (string)r.parameterValue == "Group B");
+        await Assert.That((int)groupA.count).IsEqualTo(2);
+        await Assert.That((int)groupB.count).IsEqualTo(1);
     }
 
     [Test]
@@ -107,7 +114,18 @@ public class ColorSplashHandlerTests : RevitApiTest
 
         dynamic result = handler.ColoringResults;
         await Assert.That((bool)result.success).IsTrue();
-        await Assert.That((int)result.totalElements).IsGreaterThan(0);
+
+        // Verify the assigned colors match what was requested
+        var results = (List<object>)result.results;
+        var colors = results.Cast<dynamic>().Select(r => r.color).ToList();
+        var firstColor = colors[0];
+        var secondColor = colors[1];
+        await Assert.That((int)firstColor.r).IsEqualTo(255);
+        await Assert.That((int)firstColor.g).IsEqualTo(0);
+        await Assert.That((int)firstColor.b).IsEqualTo(0);
+        await Assert.That((int)secondColor.r).IsEqualTo(0);
+        await Assert.That((int)secondColor.g).IsEqualTo(255);
+        await Assert.That((int)secondColor.b).IsEqualTo(0);
     }
 
     [Test]
@@ -121,6 +139,15 @@ public class ColorSplashHandlerTests : RevitApiTest
 
         dynamic result = handler.ColoringResults;
         await Assert.That((bool)result.success).IsTrue();
+
+        // Gradient goes blue (0,0,180) → red (180,0,0), so the two groups
+        // should get distinct colors with the first more blue and the last more red
+        var results = (List<object>)result.results;
+        var colors = results.Cast<dynamic>().Select(r => r.color).ToList();
+        var firstColor = colors[0];
+        var lastColor = colors[colors.Count - 1];
+        await Assert.That((int)firstColor.b).IsGreaterThan((int)firstColor.r);
+        await Assert.That((int)lastColor.r).IsGreaterThan((int)lastColor.b);
     }
 
     [Test]
@@ -139,7 +166,7 @@ public class ColorSplashHandlerTests : RevitApiTest
 
     [Test]
     [TestExecutor<RevitThreadExecutor>]
-    public async Task Execute_ResultMessage_IsPopulated()
+    public async Task Execute_ResultStructure_ContainsExpectedFields()
     {
         var handler = new ColorSplashHandler();
         handler.SetParameters("Walls", "Comments", useGradient: false, customColors: null);
@@ -149,8 +176,18 @@ public class ColorSplashHandlerTests : RevitApiTest
         dynamic result = handler.ColoringResults;
         await Assert.That((bool)result.success).IsTrue();
 
-        // Verify results contain coloring information
+        // Verify each result entry has the expected structure
         var results = (List<object>)result.results;
-        await Assert.That(results.Count).IsGreaterThan(0);
+        await Assert.That(results.Count).IsEqualTo(2);
+
+        foreach (dynamic entry in results)
+        {
+            await Assert.That((string)entry.parameterValue).IsNotNull();
+            await Assert.That((int)entry.count).IsGreaterThan(0);
+            await Assert.That((int)entry.color.r).IsGreaterThanOrEqualTo(0).And.IsLessThanOrEqualTo(255);
+            await Assert.That((int)entry.color.g).IsGreaterThanOrEqualTo(0).And.IsLessThanOrEqualTo(255);
+            await Assert.That((int)entry.color.b).IsGreaterThanOrEqualTo(0).And.IsLessThanOrEqualTo(255);
+            await Assert.That(((List<string>)entry.elementIds).Count).IsEqualTo((int)entry.count);
+        }
     }
 }

@@ -81,7 +81,13 @@ public class GetMaterialQuantitiesHandlerTests : RevitApiTest
 
         await Assert.That(handler.ResultInfo.Success).IsTrue();
         await Assert.That(handler.ResultInfo.TotalMaterials).IsGreaterThan(0);
-        await Assert.That(handler.ResultInfo.Message).Contains("materials");
+
+        // Since setup only creates walls, filtered results should match unfiltered
+        var allHandler = new GetMaterialQuantitiesHandler();
+        allHandler.SetParameters(categoryFilters: null, selectedElementsOnly: false);
+        allHandler.RunOnDocument(_doc);
+
+        await Assert.That(handler.ResultInfo.TotalMaterials).IsEqualTo(allHandler.ResultInfo.TotalMaterials);
     }
 
     [Test]

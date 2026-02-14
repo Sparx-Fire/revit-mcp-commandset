@@ -180,9 +180,9 @@ public class CreateRoomHandlerTests : RevitApiTest
         handler2.RunOnDocument(_doc);
 
         await Assert.That(handler2.Result.Success).IsTrue();
-        // The assigned number should differ from the requested number since "400" is taken
-        await Assert.That(handler2.Result.Response[0].Number).IsNotEqualTo(handler2.Result.Response[0].RequestedNumber)
-            .Or.IsNotEqualTo("400");
+        // The assigned number should differ from "400" since that number is already taken
+        await Assert.That(handler2.Result.Response[0].RequestedNumber).IsEqualTo("400");
+        await Assert.That(handler2.Result.Response[0].Number).IsNotEqualTo("400");
     }
 
     [Test]

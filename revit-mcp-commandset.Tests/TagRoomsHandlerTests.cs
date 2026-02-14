@@ -94,6 +94,7 @@ public class TagRoomsHandlerTests : RevitApiTest
 
         dynamic result = handler.TaggingResults;
         await Assert.That((bool)result.success).IsTrue();
+        await Assert.That((int)result.totalRooms).IsEqualTo(2);
         await Assert.That((int)result.taggedRooms).IsGreaterThan(0);
     }
 
@@ -108,7 +109,10 @@ public class TagRoomsHandlerTests : RevitApiTest
 
         dynamic result = handler.TaggingResults;
         await Assert.That((bool)result.success).IsTrue();
-        await Assert.That((int)result.taggedRooms).IsGreaterThanOrEqualTo(0);
+        // Rooms should be either tagged or skipped (if already tagged by another test)
+        int tagged = (int)result.taggedRooms;
+        int skipped = (int)result.skippedCount;
+        await Assert.That(tagged + skipped).IsEqualTo(2);
     }
 
     [Test]
@@ -127,6 +131,10 @@ public class TagRoomsHandlerTests : RevitApiTest
 
         dynamic result = handler.TaggingResults;
         await Assert.That((bool)result.success).IsTrue();
+        // Only the one specified room should be processed
+        int tagged = (int)result.taggedRooms;
+        int skipped = (int)result.skippedCount;
+        await Assert.That(tagged + skipped).IsEqualTo(1);
     }
 
     [Test]

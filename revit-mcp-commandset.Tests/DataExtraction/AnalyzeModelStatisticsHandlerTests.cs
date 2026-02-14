@@ -84,10 +84,10 @@ public class AnalyzeModelStatisticsHandlerTests : RevitApiTest
         await Assert.That(handler.ResultInfo.TotalElements).IsGreaterThan(0);
         await Assert.That(handler.ResultInfo.Categories.Count).IsGreaterThan(0);
 
-        // Verify walls category exists
+        // Verify walls category exists with the 3 walls we created
         var wallCategory = handler.ResultInfo.Categories.FirstOrDefault(c => c.CategoryName == "Walls");
         await Assert.That(wallCategory).IsNotNull();
-        await Assert.That(wallCategory.ElementCount).IsGreaterThan(0);
+        await Assert.That(wallCategory.ElementCount).IsGreaterThanOrEqualTo(3);
     }
 
     [Test]
@@ -102,10 +102,9 @@ public class AnalyzeModelStatisticsHandlerTests : RevitApiTest
         await Assert.That(handler.ResultInfo.Success).IsTrue();
         await Assert.That(handler.ResultInfo.Levels.Count).IsGreaterThan(0);
 
-        foreach (var level in handler.ResultInfo.Levels)
-        {
-            await Assert.That(level.LevelName).IsNotNullOrEmpty();
-        }
+        // Verify our setup level is present
+        var testLevel = handler.ResultInfo.Levels.FirstOrDefault(l => l.LevelName == "Stats Test Level");
+        await Assert.That(testLevel).IsNotNull();
     }
 
     [Test]
@@ -118,7 +117,7 @@ public class AnalyzeModelStatisticsHandlerTests : RevitApiTest
         handler.RunOnDocument(_doc);
 
         await Assert.That(handler.ResultInfo.Success).IsTrue();
-        await Assert.That(handler.ResultInfo.ProjectName).IsNotNullOrEmpty();
+        await Assert.That(handler.ResultInfo.ProjectName).IsEqualTo(_doc.Title);
     }
 
     [Test]

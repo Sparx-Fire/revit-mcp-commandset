@@ -82,6 +82,7 @@ public class CreateLevelHandlerTests : RevitApiTest
 
         await Assert.That(handler.Result.Success).IsTrue();
         await Assert.That(handler.Result.Response[0].FloorPlanViewName).IsNotNull();
+        await Assert.That(handler.Result.Response[0].CeilingPlanViewName).IsNull();
     }
 
     [Test]
@@ -98,6 +99,7 @@ public class CreateLevelHandlerTests : RevitApiTest
 
         await Assert.That(handler.Result.Success).IsTrue();
         await Assert.That(handler.Result.Response[0].CeilingPlanViewName).IsNotNull();
+        await Assert.That(handler.Result.Response[0].FloorPlanViewName).IsNull();
     }
 
     [Test]
@@ -148,6 +150,7 @@ public class CreateLevelHandlerTests : RevitApiTest
         for (int i = 0; i < levels.Count; i++)
         {
             await Assert.That(handler.Result.Response[i].Name).IsEqualTo(levels[i].Name);
+            await Assert.That(handler.Result.Response[i].Elevation).IsEqualTo(levels[i].Elevation);
         }
     }
 }

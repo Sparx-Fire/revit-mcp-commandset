@@ -87,9 +87,10 @@ public class ExportRoomDataHandlerTests : RevitApiTest
         await Assert.That(handler.ResultInfo.Rooms.Count).IsGreaterThan(0);
 
         var room = handler.ResultInfo.Rooms.First();
-        await Assert.That(room.Name).IsNotNullOrEmpty();
+        await Assert.That(room.Name).IsEqualTo("Test Room");
         await Assert.That(room.Number).IsNotNullOrEmpty();
-        await Assert.That(room.Level).IsNotEqualTo("No Level");
+        await Assert.That(room.Level).IsEqualTo("Export Test Level");
+        await Assert.That(room.Department).IsEqualTo("Testing");
         await Assert.That(room.Area).IsGreaterThan(0);
     }
 

@@ -102,6 +102,19 @@ public class TagRoomsHandlerTests : RevitApiTest
     [TestExecutor<RevitThreadExecutor>]
     public async Task Execute_WithLeader_TagsHaveLeaders()
     {
+        // Clear any existing room tags so this test doesn't depend on execution order
+        using (var tx = new Transaction(_doc, "Clear tags for test"))
+        {
+            tx.Start();
+            var existingTags = new FilteredElementCollector(_doc, _floorPlan.Id)
+                .OfCategory(BuiltInCategory.OST_RoomTags)
+                .WhereElementIsNotElementType()
+                .ToElementIds();
+            foreach (var id in existingTags)
+                _doc.Delete(id);
+            tx.Commit();
+        }
+
         var handler = new TagRoomsHandler();
         handler.SetParameters(useLeader: true, tagTypeId: null);
 
@@ -109,10 +122,19 @@ public class TagRoomsHandlerTests : RevitApiTest
 
         dynamic result = handler.TaggingResults;
         await Assert.That((bool)result.success).IsTrue();
-        // Rooms should be either tagged or skipped (if already tagged by another test)
-        int tagged = (int)result.taggedRooms;
-        int skipped = (int)result.skippedCount;
-        await Assert.That(tagged + skipped).IsEqualTo(2);
+        await Assert.That((int)result.taggedRooms).IsEqualTo(2);
+
+        // Verify the tags actually have leaders set
+        var tags = new FilteredElementCollector(_doc, _floorPlan.Id)
+            .OfCategory(BuiltInCategory.OST_RoomTags)
+            .WhereElementIsNotElementType()
+            .Cast<RoomTag>()
+            .ToList();
+        await Assert.That(tags.Count).IsEqualTo(2);
+        foreach (var tag in tags)
+        {
+            await Assert.That(tag.HasLeader).IsTrue();
+        }
     }
 
     [Test]

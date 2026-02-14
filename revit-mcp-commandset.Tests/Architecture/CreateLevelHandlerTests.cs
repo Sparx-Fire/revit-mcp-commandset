@@ -10,8 +10,8 @@ namespace RevitMCPCommandSet.Tests.Architecture;
 
 public class CreateLevelHandlerTests : RevitApiTest
 {
-    private static Document _doc;
-    private static string _tempPath;
+    private static Document _doc = null!;
+    private static string _tempPath = null!;
 
     [Before(HookType.Class)]
     [HookExecutor<RevitThreadExecutor>]

@@ -10,11 +10,13 @@ namespace RevitMCPCommandSet.Tests;
 
 public class TagRoomsHandlerTests : RevitApiTest
 {
-    private static Document _doc;
-    private static string _tempPath;
-    private static ViewPlan _floorPlan;
-    private static Room _room1;
-    private static Room _room2;
+    private static Document _doc = null!;
+    private static string _tempPath = null!;
+#pragma warning disable TUnit0023 // Revit elements are disposed when the document is closed
+    private static ViewPlan _floorPlan = null!;
+#pragma warning restore TUnit0023
+    private static Room _room1 = null!;
+    private static Room _room2 = null!;
 
     [Before(HookType.Class)]
     [HookExecutor<RevitThreadExecutor>]
@@ -56,10 +58,10 @@ public class TagRoomsHandlerTests : RevitApiTest
         _floorPlan = new FilteredElementCollector(_doc)
             .OfClass(typeof(ViewPlan))
             .Cast<ViewPlan>()
-            .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan &&
-                                 !v.IsTemplate &&
-                                 v.GenLevel != null &&
-                                 v.GenLevel.Name == levelName);
+            .First(v => v.ViewType == ViewType.FloorPlan &&
+                        !v.IsTemplate &&
+                        v.GenLevel != null &&
+                        v.GenLevel.Name == levelName);
 
         // Re-find rooms in the reopened document
         var rooms = new FilteredElementCollector(_doc)
@@ -69,8 +71,8 @@ public class TagRoomsHandlerTests : RevitApiTest
             .Where(r => r.Area > 0)
             .ToList();
 
-        _room1 = rooms.Count > 0 ? rooms[0] : null;
-        _room2 = rooms.Count > 1 ? rooms[1] : null;
+        _room1 = rooms[0];
+        _room2 = rooms[1];
     }
 
     [After(HookType.Class)]

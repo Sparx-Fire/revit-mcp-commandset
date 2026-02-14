@@ -10,8 +10,8 @@ namespace RevitMCPCommandSet.Tests.DataExtraction;
 
 public class ExportRoomDataHandlerTests : RevitApiTest
 {
-    private static Document _doc;
-    private static string _tempPath;
+    private static Document _doc = null!;
+    private static string _tempPath = null!;
 
     [Before(HookType.Class)]
     [HookExecutor<RevitThreadExecutor>]
@@ -115,19 +115,18 @@ public class ExportRoomDataHandlerTests : RevitApiTest
     [TestExecutor<RevitThreadExecutor>]
     public async Task Execute_IncludeUnplaced_AllRoomsReturned()
     {
-        var handler = new ExportRoomDataHandler();
-        handler.SetParameters(includeUnplacedRooms: true, includeNotEnclosedRooms: true);
+        // Baseline: count placed rooms only
+        var placedOnly = new ExportRoomDataHandler();
+        placedOnly.SetParameters(includeUnplacedRooms: false, includeNotEnclosedRooms: false);
+        placedOnly.RunOnDocument(_doc);
 
-        handler.RunOnDocument(_doc);
+        // Act: count all rooms including unplaced
+        var includeAll = new ExportRoomDataHandler();
+        includeAll.SetParameters(includeUnplacedRooms: true, includeNotEnclosedRooms: true);
+        includeAll.RunOnDocument(_doc);
 
-        await Assert.That(handler.ResultInfo.Success).IsTrue();
-
-        // Should have more rooms than placed-only export
-        var placedHandler = new ExportRoomDataHandler();
-        placedHandler.SetParameters(includeUnplacedRooms: false, includeNotEnclosedRooms: false);
-        placedHandler.RunOnDocument(_doc);
-
-        await Assert.That(handler.ResultInfo.TotalRooms).IsGreaterThanOrEqualTo(placedHandler.ResultInfo.TotalRooms);
+        await Assert.That(includeAll.ResultInfo.Success).IsTrue();
+        await Assert.That(includeAll.ResultInfo.TotalRooms).IsGreaterThan(placedOnly.ResultInfo.TotalRooms);
     }
 
     [Test]

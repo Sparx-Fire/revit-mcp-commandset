@@ -11,9 +11,11 @@ namespace RevitMCPCommandSet.Tests.Architecture;
 
 public class CreateRoomHandlerTests : RevitApiTest
 {
-    private static Document _doc;
-    private static string _tempPath;
-    private static Level _level;
+    private static Document _doc = null!;
+    private static string _tempPath = null!;
+#pragma warning disable TUnit0023 // Revit elements are disposed when the document is closed
+    private static Level _level = null!;
+#pragma warning restore TUnit0023
 
     [Before(HookType.Class)]
     [HookExecutor<RevitThreadExecutor>]
@@ -56,7 +58,7 @@ public class CreateRoomHandlerTests : RevitApiTest
         _level = new FilteredElementCollector(_doc)
             .OfClass(typeof(Level))
             .Cast<Level>()
-            .FirstOrDefault(l => l.Name == "Room Handler Test Level");
+            .First(l => l.Name == "Room Handler Test Level");
     }
 
     [After(HookType.Class)]

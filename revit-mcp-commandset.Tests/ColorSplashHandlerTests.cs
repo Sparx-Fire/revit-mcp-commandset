@@ -10,9 +10,11 @@ namespace RevitMCPCommandSet.Tests;
 
 public class ColorSplashHandlerTests : RevitApiTest
 {
-    private static Document _doc;
-    private static string _tempPath;
-    private static ViewPlan _floorPlan;
+    private static Document _doc = null!;
+    private static string _tempPath = null!;
+#pragma warning disable TUnit0023 // Revit elements are disposed when the document is closed
+    private static ViewPlan _floorPlan = null!;
+#pragma warning restore TUnit0023
 
     [Before(HookType.Class)]
     [HookExecutor<RevitThreadExecutor>]
@@ -59,10 +61,10 @@ public class ColorSplashHandlerTests : RevitApiTest
         _floorPlan = new FilteredElementCollector(_doc)
             .OfClass(typeof(ViewPlan))
             .Cast<ViewPlan>()
-            .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan &&
-                                 !v.IsTemplate &&
-                                 v.GenLevel != null &&
-                                 v.GenLevel.Name == "Color Test Level");
+            .First(v => v.ViewType == ViewType.FloorPlan &&
+                        !v.IsTemplate &&
+                        v.GenLevel != null &&
+                        v.GenLevel.Name == "Color Test Level");
     }
 
     [After(HookType.Class)]
